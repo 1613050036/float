@@ -3964,6 +3964,85 @@
 .ui-entry-card[data-active="true"] { border-color: var(--c-icon-active); }
 .ui-entry-card[data-disabled="true"] { opacity: 0.5; }
 
+/* ── 预设条目按 App 筛选：高亮/变暗 ── */
+.ui-entry-card[data-app-match="1"] {
+  border-color: var(--c-icon-active);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-icon-active) 30%, transparent);
+  background: color-mix(in srgb, var(--c-icon-active) 6%, var(--c-card, #fff));
+}
+.ui-entry-card[data-app-match="0"] {
+  opacity: 0.3;
+  filter: grayscale(0.5);
+}
+
+/* ── 折叠组：轻量摘要卡 ── */
+.ui-entry-collapsed-group {
+  padding: 10px 16px !important;
+  gap: 0 !important;
+  border-style: dashed !important;
+  border-width: 1.5px !important;
+}
+
+/* ── 多选悬浮条：跟随列表滚动（sticky），不固定顶部/底部 ── */
+.multi-select-float-bar {
+  position: sticky;
+  top: 8px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--c-card, #fff) 92%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--c-icon-active) 28%, transparent);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), inset 0 1px 2px rgba(255, 255, 255, 0.4);
+}
+.multi-select-float-bar .msfb-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.multi-select-float-bar .msfb-count {
+  font-size: calc(12px*var(--app-text-scale,1));
+  font-weight: 600;
+  color: var(--c-text-title, #111);
+  white-space: nowrap;
+  margin-right: 2px;
+}
+.multi-select-float-bar .msfb-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.multi-select-float-bar .msfb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #fff;
+  color: #4b4b4b;
+  font-size: calc(12px*var(--app-text-scale,1));
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s, opacity 0.2s;
+  white-space: nowrap;
+}
+.multi-select-float-bar .msfb-btn:active { transform: scale(0.92); }
+.multi-select-float-bar .msfb-btn:disabled { opacity: 0.4; pointer-events: none; }
+.multi-select-float-bar .msfb-btn:hover { background: #f6f6f6; }
+.multi-select-float-bar .msfb-danger { color: var(--c-danger, #e5484d); border-color: color-mix(in srgb, var(--c-danger, #e5484d) 30%, transparent); }
+.multi-select-float-bar .msfb-done { background: var(--c-icon-active, #111); color: #fff; border-color: transparent; }
+.multi-select-float-bar .msfb-done:hover { background: color-mix(in srgb, var(--c-icon-active, #111) 88%, white); }
+
 /* ── Entry card 左滑操作（新增/删除） ── */
 .ui-swipe-wrap {
   position: relative;
