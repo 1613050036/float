@@ -1,8 +1,8 @@
 "use client";
 
-// 微信云同步 toast：weixin-cloud-sync 广播的同步事件在这里可视化，过程常驻式——
-// 「…中」的 sticky 条从动手挂到结束，结束时同 id 原地替换成结果（自动消隐），
-// 没事可干则无声撤下（text 为 null）。挂在桌面壳根部，停在哪个 App 都看得见。
+// 微信云同步 toast：weixin-cloud-sync 广播的同步事件在这里可视化。
+// 现在只有失败会广播（进度/成功提示按用户反馈撤掉了），同 id 的后续事件
+// 原地替换、text 为 null 时无声撤下。挂在桌面壳根部，停在哪个 App 都看得见。
 // 挂在顶部（状态栏下方）：常驻条放底部会挡住聊天输入栏。
 
 import { useEffect, useRef, useState } from "react";
