@@ -318,7 +318,6 @@ type BridgeConfigRow = {
   rules: ServerBridgeRule[];
   cloud_config: EncryptedPayload | null;
   rule_runs: Record<string, string>;
-  daily_cap: number;
   daily_count: { day?: string; count?: number };
   shortcut_actions?: unknown;
 };
@@ -426,7 +425,7 @@ Deno.serve(async (req: Request) => {
   const runJob = async (): Promise<void> => {
   try {
     const configResponse = await rest(
-      `push_bridge_config?user_id=eq.${encodeURIComponent(job.user_id)}&select=rules,cloud_config,rule_runs,daily_cap,daily_count,shortcut_actions&limit=1`,
+      `push_bridge_config?user_id=eq.${encodeURIComponent(job.user_id)}&select=rules,cloud_config,rule_runs,daily_count,shortcut_actions&limit=1`,
     );
     const configRows = configResponse.ok ? await configResponse.json() as BridgeConfigRow[] : [];
     const config = configRows[0];
@@ -693,8 +692,9 @@ Deno.serve(async (req: Request) => {
     const rules = Array.isArray(config.rules) ? config.rules : [];
     const ruleRuns: Record<string, string> = { ...(config.rule_runs || {}) };
     const today = new Date().toISOString().slice(0, 10);
+    // 每日回话不设上限（曾默认 20 次/天、无 UI 可调、超限静默不回话，已按需求取消）。
+    // daily_count 照常记账，仅作统计与排查。
     let dailyCount = config.daily_count?.day === today ? Number(config.daily_count.count) || 0 : 0;
-    const dailyCap = Math.max(1, Number(config.daily_cap) || 20);
 
     const outboxRows: Record<string, unknown>[] = [];
     let generated = 0;
@@ -775,23 +775,18 @@ Deno.serve(async (req: Request) => {
         }
 
         let replyRaw = "";
-        let capped = false;
         if (rule.chat?.requestReply) {
-          if (dailyCount >= dailyCap) {
-            capped = true;
-          } else {
-            const snapshot = await loadSnapshot(rule.id);
-            if (snapshot?.replyRequest && subs.length > 0) {
-              try {
-                const bodyJson = substituteSentinel(JSON.stringify(snapshot.replyRequest.body), BRIDGE_EVENT_SENTINEL, processed);
-                replyRaw = await callLlm(snapshot.replyRequest, bodyJson, 300_000);
-                if (replyRaw) {
-                  dailyCount += 1;
-                  generated += 1;
-                }
-              } catch {
-                replyRaw = "";
+          const snapshot = await loadSnapshot(rule.id);
+          if (snapshot?.replyRequest && subs.length > 0) {
+            try {
+              const bodyJson = substituteSentinel(JSON.stringify(snapshot.replyRequest.body), BRIDGE_EVENT_SENTINEL, processed);
+              replyRaw = await callLlm(snapshot.replyRequest, bodyJson, 300_000);
+              if (replyRaw) {
+                dailyCount += 1;
+                generated += 1;
               }
+            } catch {
+              replyRaw = "";
             }
           }
         }
@@ -992,7 +987,6 @@ Deno.serve(async (req: Request) => {
           deferredActions: rule.deferredActions ?? [],
           ...(shortcutNote ? { shortcutNote } : {}),
           ...(executedShortcutMarker ? { shortcutMarker: executedShortcutMarker } : {}),
-          capped,
           reply: replyRaw ? (await loadSnapshot(rule.id))?.reply ?? null : null,
         };
         const stored = await rest("push_outbox", {
