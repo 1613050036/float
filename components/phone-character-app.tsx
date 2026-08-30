@@ -62,6 +62,17 @@ type CanvasRelationLine = { key: string; aId: string; bId: string; labels: strin
 // 每个世界一张画布：平移缩放记忆按世界分 key（默认世界沿用旧 key，存量零迁移）
 const PAN_STORAGE_BASE_KEY = 'ai_phone_canvas_pan_v2';
 const WORLD_TAB_KEY = 'ai_phone_character_app_world_v1';
+const CHARACTER_AVATAR_MAX_BYTES = 600 * 1024;
+const CHARACTER_AVATAR_COMPRESSION_FALLBACKS = [
+  { maxSize: 1280, quality: 0.8 },
+  { maxSize: 1024, quality: 0.8 },
+  { maxSize: 1024, quality: 0.72 },
+  { maxSize: 768, quality: 0.72 },
+  { maxSize: 640, quality: 0.68 },
+  { maxSize: 512, quality: 0.64 },
+  { maxSize: 400, quality: 0.6 },
+  { maxSize: 320, quality: 0.56 },
+] as const;
 function worldPanKey(worldId: string): string {
   return worldId === DEFAULT_CHARACTER_WORLD_ID ? PAN_STORAGE_BASE_KEY : `${PAN_STORAGE_BASE_KEY}_${worldId}`;
 }
@@ -317,6 +328,7 @@ export function PhoneCharacterApp({ onClose, onNotice }: PhoneCharacterAppProps)
                 onNotice("导出成功");
               }
             }}
+            onNotice={onNotice}
           />
         )}
       </div>
@@ -1165,6 +1177,7 @@ function CharListView({
                   onEditTap={handleCharEditTap}
                   onDragMoveAt={handleCharDragMoveAt}
                   onDropAt={handleCharDropAt}
+                  use2dTransform
                   trashBinRef={trashBinRef}
                   onDragActiveChange={setIsAnyDragging}
                   onOverTrashChange={setOverTrashBin}
@@ -1600,7 +1613,7 @@ function CharListView({
 function DraggableNode({
   id, x, y, rot, zIndex, children, onDragEnd, onClick, className, w, isEditing, onDeleteIntent,
   trashBinRef, onDragActiveChange, onOverTrashChange, zoom = 1, pinchRef,
-  onEditTap, onDragMoveAt, onDropAt
+  onEditTap, onDragMoveAt, onDropAt, use2dTransform = false
 }: {
   id: string; x: number; y: number; rot: number; zIndex: number;
   children: React.ReactNode;
@@ -1619,6 +1632,8 @@ function DraggableNode({
   onDragMoveAt?: (clientX: number, clientY: number) => void;
   /** 松手时的落点处理；返回 true 表示已被消费（如归档进其他世界），位置回弹 */
   onDropAt?: (id: string, clientX: number, clientY: number) => boolean;
+  /** 使用二维位移，避免 3D 合成导致档案墙图片重采样模糊 */
+  use2dTransform?: boolean;
 }) {
   const [pos, setPos] = useState({ x, y });
   const [isDragging, setIsDragging] = useState(false);
@@ -1740,7 +1755,9 @@ function DraggableNode({
       onClickCapture={handleClick}
       style={{
         width: w,
-        transform: `translate3d(${pos.x}px, ${pos.y}px, 0) rotate(${rot}deg)`,
+        transform: use2dTransform
+          ? `translate(${pos.x}px, ${pos.y}px) rotate(${rot}deg)`
+          : `translate3d(${pos.x}px, ${pos.y}px, 0) rotate(${rot}deg)`,
         zIndex: isDragging ? 9999999 : zIndex,
         cursor: isDragging ? 'grabbing' : 'grab',
         touchAction: 'none',
@@ -1767,6 +1784,7 @@ function CharArchiveView({
   onDelete,
   onExportJson,
   onExportPng,
+  onNotice = () => { },
   dummy,
 }: {
   char: Character;
@@ -1780,6 +1798,7 @@ function CharArchiveView({
   onDelete: () => void;
   onExportJson: () => void;
   onExportPng: () => Promise<void>;
+  onNotice?: (text: string) => void;
   dummy?: boolean;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1803,6 +1822,7 @@ function CharArchiveView({
   const [avatar, setAvatar] = useState<string | null>(char.avatar || null);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlInput, setUrlInput] = useState("");
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Send mascot page context (on mount + field changes)
@@ -1882,8 +1902,21 @@ function CharArchiveView({
   }, [isEditing, char]);
 
   async function handleAvatarFile(file: File) {
-    const url = await fileToDataUrl(file);
-    setAvatar(url);
+    setAvatarBusy(true);
+    try {
+      const url = await fileToDataUrl(file, {
+        maxSize: 1280,
+        quality: 0.86,
+        maxBytes: CHARACTER_AVATAR_MAX_BYTES,
+        fallbacks: CHARACTER_AVATAR_COMPRESSION_FALLBACKS,
+      });
+      setAvatar(url);
+    } catch (error) {
+      console.error("Failed to optimize character avatar", error);
+      onNotice(error instanceof Error ? error.message : "图片处理失败，请更换图片");
+    } finally {
+      setAvatarBusy(false);
+    }
   }
 
   function handleAvatarUrl() {
@@ -2014,9 +2047,9 @@ function CharArchiveView({
           <div className="char-archive-left">
             <div
               className="char-archive-photo relative"
-              style={{ cursor: isEditing ? "pointer" : "default" }}
+              style={{ cursor: avatarBusy ? "wait" : isEditing ? "pointer" : "default" }}
               onClick={() => {
-                if (isEditing) {
+                if (isEditing && !avatarBusy) {
                   fileRef.current?.click();
                 }
               }}
@@ -2029,7 +2062,7 @@ function CharArchiveView({
               {isEditing && (
                 <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center pointer-events-none text-white">
                   <IconCamera size={24} />
-                  <span className="ts-10 mt-1">Change Photo</span>
+                  <span className="ts-10 mt-1">{avatarBusy ? "Optimizing..." : "Change Photo"}</span>
                 </div>
               )}
             </div>
@@ -2039,6 +2072,7 @@ function CharArchiveView({
               type="file"
               accept="image/*"
               className="hidden"
+              disabled={avatarBusy}
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (file) await handleAvatarFile(file);
@@ -2608,40 +2642,88 @@ function AutoResizingTextarea({
 
 // ── 工具函数 ─────────────────────────────────────────
 
-function fileToDataUrl(file: File): Promise<string> {
+type ImageCompressionAttempt = { maxSize: number; quality: number };
+
+function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const MAX_SIZE = 400;
-        let w = img.width;
-        let h = img.height;
-        if (w > MAX_SIZE || h > MAX_SIZE) {
-          if (w > h) {
-            h = Math.round(h * MAX_SIZE / w);
-            w = MAX_SIZE;
-          } else {
-            w = Math.round(w * MAX_SIZE / h);
-            h = MAX_SIZE;
-          }
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return resolve(reader.result as string);
-        ctx.drawImage(img, 0, 0, w, h);
-
-        // Use webp or jpeg to heavily compress large png files before saving to localstorage
-        resolve(canvas.toDataURL("image/webp", 0.8));
-      };
-      img.onerror = () => resolve(reader.result as string); // fallback to raw
-      img.src = reader.result as string;
-    };
-    reader.onerror = reject;
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("读取图片失败"));
     reader.readAsDataURL(file);
   });
+}
+
+function loadDataUrlImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("无法解析图片，请更换图片"));
+    img.src = dataUrl;
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      blob => blob ? resolve(blob) : reject(new Error("图片编码失败，请更换图片")),
+      "image/webp",
+      quality,
+    );
+  });
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("读取压缩图片失败"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function fileToDataUrl(
+  file: File,
+  options: {
+    maxSize?: number;
+    quality?: number;
+    maxBytes?: number;
+    fallbacks?: readonly ImageCompressionAttempt[];
+  } = {},
+): Promise<string> {
+  const sourceDataUrl = await readFileAsDataUrl(file);
+  const maxSize = options.maxSize ?? 400;
+  const quality = options.quality ?? 0.8;
+
+  try {
+    const img = await loadDataUrlImage(sourceDataUrl);
+    const attempts: ImageCompressionAttempt[] = [
+      { maxSize, quality },
+      ...(options.fallbacks ?? []),
+    ];
+    const canvas = document.createElement("canvas");
+
+    for (const attempt of attempts) {
+      const scale = Math.min(1, attempt.maxSize / Math.max(img.width, img.height));
+      const width = Math.max(1, Math.round(img.width * scale));
+      const height = Math.max(1, Math.round(img.height * scale));
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("当前浏览器无法处理图片，请更换图片");
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const blob = await canvasToBlob(canvas, attempt.quality);
+      if (!options.maxBytes || blob.size <= options.maxBytes) {
+        return await blobToDataUrl(blob);
+      }
+    }
+
+    throw new Error(`图片压缩后仍超过 ${Math.ceil((options.maxBytes ?? 0) / 1024)}KB，请更换图片`);
+  } catch (error) {
+    // 旧调用未要求体积上限时维持原有兼容兜底；角色头像的受限链路绝不保存原始大图。
+    if (!options.maxBytes) return sourceDataUrl;
+    throw error;
+  }
 }
 
 // ── 图标 ─────────────────────────────────────────────
