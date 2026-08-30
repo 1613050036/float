@@ -467,6 +467,8 @@ export type QaContextEntry = {
     content: string;
     /** user：随消息附带的图片（dataURL）；识图未开启时适配层会自动降级为占位文本 */
     images?: string[];
+    /** user：随消息附带的纯文本或代码附件 */
+    files?: { name: string; content: string }[];
     /** assistant：原生协议的工具调用（文本协议轮次不填，指令已在 content 里） */
     toolCalls?: LlmToolCall[];
     /** tool：来源调用 id（原生轮次才有）与工具名 */
@@ -476,11 +478,13 @@ export type QaContextEntry = {
     turn?: string;
 };
 
-/** user 条目内容：带图片时转多模态 parts（识图未开启由适配层降级为占位） */
+/** user 条目内容：先拼接文本附件；带图片时再转多模态 parts。 */
 function userEntryContent(entry: QaContextEntry): string | LLMContentPart[] {
-    if (!entry.images?.length) return entry.content;
+    const fileBlocks = (entry.files ?? []).map((file) => `\n\n[附件：${file.name}]\n${file.content}`).join("");
+    const textContent = `${entry.content}${fileBlocks}`;
+    if (!entry.images?.length) return textContent;
     return [
-        { type: "text", text: entry.content },
+        { type: "text", text: textContent },
         ...entry.images.map((url) => ({ type: "image_url" as const, image_url: { url } })),
     ];
 }
@@ -538,10 +542,16 @@ export async function compactQaContext(entries: QaContextEntry[], options?: { si
     const lines = entries.map((entry) => {
         const head = entry.role === "user" ? "用户" : entry.role === "assistant" ? "助手" : `工具结果(${entry.name ?? "工具"})`;
         const body = entry.content.length > 4000 ? `${entry.content.slice(0, 4000)}…（截断）` : entry.content;
+        const files = entry.files?.length
+            ? `\n${entry.files.map((file) => {
+                const content = file.content.length > 4000 ? `${file.content.slice(0, 4000)}…（截断）` : file.content;
+                return `[附件：${file.name}]\n${content}`;
+            }).join("\n")}`
+            : "";
         const calls = entry.toolCalls?.length
             ? `\n[调用工具] ${entry.toolCalls.map((c) => `${c.name}(${JSON.stringify(c.args ?? {}).slice(0, 400)})`).join("；")}`
             : "";
-        return `【${head}】${body}${calls}`;
+        return `【${head}】${body}${files}${calls}`;
     });
     let transcript = lines.join("\n\n");
     if (transcript.length > 150_000) transcript = transcript.slice(-150_000);

@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExterna
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
-import { AppWindow, ArrowUp, BrushCleaning, Check, ChevronLeft, ChevronRight, Copy, Drama, FileCode2, Gamepad2, Github, Loader2, Menu, MoreVertical, Pencil, Pin, PinOff, Play, Plus, Square, Trash2, Wrench, X } from "lucide-react";
+import { AppWindow, ArrowUp, BrushCleaning, Check, ChevronLeft, ChevronRight, Copy, Drama, FileCode2, FileText, Gamepad2, Github, Image as ImageIcon, Loader2, Menu, MoreVertical, Paperclip, Pencil, Pin, PinOff, Play, Plus, Square, Trash2, Wrench, X } from "lucide-react";
 import { getQaApiLogs, clearQaApiLogs, type DebugInfo } from "@/lib/api-log-store";
 import { QaFileCard } from "@/components/qa-file-card";
 import { parseQaFileMarker } from "@/lib/qa-computer-tools";
@@ -21,14 +21,19 @@ import {
   clearQaToolHistory,
   createQaSession,
   deleteQaSession,
+  editAndResendQaMessage,
   getQaActiveContextChars,
   getQaChatSnapshot,
   getQaContextBudgetChars,
+  getQaEditAndResendBlockReason,
   hasQaToolHistory,
   hydrateQaChat,
   QA_CONTEXT_BUDGET_MAX,
   QA_CONTEXT_BUDGET_MIN,
   QA_DEFAULT_CONTEXT_BUDGET_CHARS,
+  QA_TEXT_ATTACHMENT_MAX_BYTES,
+  QA_TEXT_ATTACHMENTS_MAX_COUNT,
+  QA_TEXT_ATTACHMENTS_MAX_CHARS,
   setQaContextBudgetChars,
   retryQaMessage,
   renameQaSession,
@@ -41,6 +46,7 @@ import {
   updateQaMessageContent,
   type QaMsg,
   type QaSession,
+  type QaTextAttachment,
   type QaToolStatus,
 } from "@/lib/qa-chat-store";
 import {
@@ -307,7 +313,7 @@ const QaMessageItem = memo(function QaMessageItem({
           <button type="button" className="qa-msg-action" aria-label="复制原始内容" title="复制" onClick={() => onCopy(msg.content)}>
             <Copy size={14} strokeWidth={2} />
           </button>
-          <button type="button" className="qa-msg-action" aria-label="编辑原始内容" title="编辑" onClick={() => onEdit(msg)}>
+          <button type="button" className="qa-msg-action" aria-label="修改原始内容" title="修改" onClick={() => onEdit(msg)}>
             <Pencil size={14} strokeWidth={2} />
           </button>
         </div>
@@ -343,6 +349,16 @@ const QaMessageItem = memo(function QaMessageItem({
                 <button key={i} type="button" className="qa-msg-image" onClick={() => onViewImage(url)} aria-label="查看图片">
                   <img src={url} alt="" />
                 </button>
+              ))}
+            </div>
+          )}
+          {msg.files && msg.files.length > 0 && (
+            <div className="qa-msg-files">
+              {msg.files.map((file) => (
+                <span className="qa-file-chip" key={file.name} title={file.name}>
+                  <FileText size={13} />
+                  <span>{file.name}</span>
+                </span>
               ))}
             </div>
           )}
@@ -802,11 +818,19 @@ export function PhoneQaApp({ onClose, onNotice }: PhoneQaAppProps) {
   const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<QaTextAttachment[]>([]);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [viewerImage, setViewerImage] = useState<string | null>(null);
   const [editingMsg, setEditingMsg] = useState<QaMsg | null>(null);
   const [editText, setEditText] = useState("");
+  const [editImages, setEditImages] = useState<string[]>([]);
+  const [editFiles, setEditFiles] = useState<QaTextAttachment[]>([]);
+  const [editAttachMenuOpen, setEditAttachMenuOpen] = useState(false);
   const [visionEnabled, setVisionEnabled] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const editImageInputRef = useRef<HTMLInputElement | null>(null);
+  const editFileInputRef = useRef<HTMLInputElement | null>(null);
   const [apiReady, setApiReady] = useState(true);
   const [modelName, setModelName] = useState("");
   const [repoWritable, setRepoWritable] = useState(false);
@@ -895,18 +919,22 @@ export function PhoneQaApp({ onClose, onNotice }: PhoneQaAppProps) {
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if ((!text && pendingImages.length === 0) || snapshot.isGenerating) return;
+    if ((!text && pendingImages.length === 0 && pendingFiles.length === 0) || snapshot.isGenerating || snapshot.isCompacting) return;
     setInput("");
     const images = pendingImages;
+    const files = pendingFiles;
     setPendingImages([]);
+    setPendingFiles([]);
+    setAttachMenuOpen(false);
     stickToBottomRef.current = true;
     requestAnimationFrame(autoGrow);
-    void sendQaMessage(text, images.length ? images : undefined);
-  }, [input, pendingImages, snapshot.isGenerating, autoGrow]);
+    void sendQaMessage(text, images.length ? images : undefined, files.length ? files : undefined);
+  }, [input, pendingImages, pendingFiles, snapshot.isGenerating, snapshot.isCompacting, autoGrow]);
 
   // 附加图片：仅识图已开启的 API 显示入口；读为 dataURL，单张限 4MB
-  const handlePickImages = useCallback((files: FileList | null) => {
+  const handlePickImages = useCallback((files: FileList | null, target: "composer" | "edit") => {
     if (!files?.length) return;
+    const setter = target === "edit" ? setEditImages : setPendingImages;
     for (const file of Array.from(files).slice(0, 6)) {
       if (file.size > 4 * 1024 * 1024) {
         onNotice?.(`「${file.name}」超过 4MB，已跳过。`);
@@ -915,11 +943,43 @@ export function PhoneQaApp({ onClose, onNotice }: PhoneQaAppProps) {
       const reader = new FileReader();
       reader.onload = () => {
         const url = typeof reader.result === "string" ? reader.result : "";
-        if (url) setPendingImages((current) => (current.length >= 6 ? current : [...current, url]));
+        if (url) setter((current) => (current.length >= 6 ? current : [...current, url]));
       };
       reader.readAsDataURL(file);
     }
-    if (imageInputRef.current) imageInputRef.current.value = "";
+  }, [onNotice]);
+
+  const handlePickTextFiles = useCallback((files: FileList | null, target: "composer" | "edit") => {
+    if (!files?.length) return;
+    const setter = target === "edit" ? setEditFiles : setPendingFiles;
+    const allowedExtensions = [".txt", ".md", ".json", ".csv", ".js", ".ts", ".tsx", ".jsx", ".html", ".css"];
+    for (const file of Array.from(files).slice(0, QA_TEXT_ATTACHMENTS_MAX_COUNT)) {
+      const lowerName = file.name.toLowerCase();
+      if (!allowedExtensions.some((extension) => lowerName.endsWith(extension))) {
+        const extension = lowerName.includes(".") ? `.${lowerName.split(".").pop()}` : "无后缀";
+        onNotice?.(`不支持 ${extension} 文件，只能读取纯文本或代码附件。`);
+        continue;
+      }
+      if (file.size > QA_TEXT_ATTACHMENT_MAX_BYTES) {
+        onNotice?.(`「${file.name}」超过 1MB，已跳过。`);
+        continue;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const content = typeof reader.result === "string" ? reader.result : "";
+        setter((current) => {
+          if (current.length >= QA_TEXT_ATTACHMENTS_MAX_COUNT || current.some((candidate) => candidate.name === file.name)) return current;
+          const next = [...current, { name: file.name, content }];
+          const totalChars = next.reduce((sum, candidate) => sum + candidate.name.length + candidate.content.length, 0);
+          if (totalChars > QA_TEXT_ATTACHMENTS_MAX_CHARS) {
+            onNotice?.(`附件文本合计不能超过 ${Math.floor(QA_TEXT_ATTACHMENTS_MAX_CHARS / 1000)}K 字符。`);
+            return current;
+          }
+          return next;
+        });
+      };
+      reader.readAsText(file);
+    }
   }, [onNotice]);
 
   const handleRetry = useCallback((assistantMsgId: string) => {
@@ -937,14 +997,40 @@ export function PhoneQaApp({ onClose, onNotice }: PhoneQaAppProps) {
   const handleEditMessage = useCallback((msg: QaMsg) => {
     setEditingMsg(msg);
     setEditText(msg.content);
+    setEditImages(msg.images ?? []);
+    setEditFiles(msg.files ?? []);
+    setEditAttachMenuOpen(false);
   }, []);
 
-  const handleSaveEdit = useCallback(() => {
+  const handleSaveEdit = useCallback((andResend: boolean) => {
     if (!editingMsg || !snapshot.activeSessionId) return;
-    updateQaMessageContent(snapshot.activeSessionId, editingMsg.id, editText);
+    const result = andResend
+      ? editAndResendQaMessage(
+          snapshot.activeSessionId,
+          editingMsg.id,
+          editText,
+          editImages.length ? editImages : undefined,
+          editFiles.length ? editFiles : undefined,
+        )
+      : updateQaMessageContent(
+          snapshot.activeSessionId,
+          editingMsg.id,
+          editText,
+          editingMsg.role === "user" && editImages.length ? editImages : undefined,
+          editingMsg.role === "user" && editFiles.length ? editFiles : undefined,
+        );
+    if (!result.ok) {
+      onNotice?.(result.reason);
+      return;
+    }
     setEditingMsg(null);
-    onNotice?.("已保存消息内容");
-  }, [editingMsg, editText, snapshot.activeSessionId, onNotice]);
+    onNotice?.(andResend ? "已修改并重新发送" : "已保存消息内容");
+  }, [editingMsg, editText, editImages, editFiles, snapshot.activeSessionId, onNotice]);
+
+  const editResendBlockReason = editingMsg?.role === "user" && snapshot.activeSessionId
+    ? getQaEditAndResendBlockReason(snapshot.activeSessionId, editingMsg.id)
+    : null;
+  const editIsEmpty = !editText.trim() && editImages.length === 0 && editFiles.length === 0;
 
   const streamingMsgId =
     snapshot.isGenerating && messages.length > 0 && messages[messages.length - 1].role === "assistant"
@@ -1076,6 +1162,23 @@ export function PhoneQaApp({ onClose, onNotice }: PhoneQaAppProps) {
               ))}
             </div>
           )}
+          {pendingFiles.length > 0 && (
+            <div className="qa-file-strip">
+              {pendingFiles.map((file) => (
+                <span className="qa-file-chip is-removable" key={file.name} title={file.name}>
+                  <FileText size={13} />
+                  <span>{file.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setPendingFiles((current) => current.filter((candidate) => candidate.name !== file.name))}
+                    aria-label={`移除附件 ${file.name}`}
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             className="qa-composer-input hide-scrollbar"
@@ -1088,26 +1191,55 @@ export function PhoneQaApp({ onClose, onNotice }: PhoneQaAppProps) {
             }}
           />
           <div className="qa-composer-toolbar">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.md,.json,.csv,.js,.ts,.tsx,.jsx,.html,.css"
+              multiple
+              hidden
+              onChange={(event) => {
+                handlePickTextFiles(event.target.files, "composer");
+                event.currentTarget.value = "";
+              }}
+            />
             {visionEnabled && (
-              <>
-                <input
-                  ref={imageInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  style={{ display: "none" }}
-                  onChange={(e) => handlePickImages(e.target.files)}
-                />
-                <button
-                  type="button"
-                  className="qa-circle-btn qa-attach-btn"
-                  onClick={() => imageInputRef.current?.click()}
-                  aria-label="发送图片"
-                >
-                  <Plus size={17} strokeWidth={2.2} />
-                </button>
-              </>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(event) => {
+                  handlePickImages(event.target.files, "composer");
+                  event.currentTarget.value = "";
+                }}
+              />
             )}
+            <div className="qa-attach-menu-wrap">
+              <button
+                type="button"
+                className="qa-circle-btn qa-attach-btn"
+                onClick={() => setAttachMenuOpen((open) => !open)}
+                aria-label="添加附件或图片"
+                aria-expanded={attachMenuOpen}
+              >
+                <Plus size={17} strokeWidth={2.2} />
+              </button>
+              {attachMenuOpen && (
+                <div className="qa-attach-menu">
+                  <button type="button" onClick={() => { fileInputRef.current?.click(); setAttachMenuOpen(false); }}>
+                    <Paperclip size={15} />
+                    上传附件
+                  </button>
+                  {visionEnabled && (
+                    <button type="button" onClick={() => { imageInputRef.current?.click(); setAttachMenuOpen(false); }}>
+                      <ImageIcon size={15} />
+                      添加图片
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             {modelName && <span className="qa-model-pill">{modelName}</span>}
 
             {repoWritable && (
@@ -1147,8 +1279,8 @@ export function PhoneQaApp({ onClose, onNotice }: PhoneQaAppProps) {
                 type="button"
                 className="qa-circle-btn qa-send-btn"
                 onClick={handleSend}
-                disabled={!input.trim()}
-                aria-label="发送"
+                disabled={(!input.trim() && pendingImages.length === 0 && pendingFiles.length === 0) || snapshot.isCompacting}
+                aria-label={snapshot.isCompacting ? "正在整理上下文" : "发送"}
               >
                 <ArrowUp size={20} strokeWidth={2.4} />
               </button>
@@ -1242,9 +1374,9 @@ export function PhoneQaApp({ onClose, onNotice }: PhoneQaAppProps) {
 
       {editingMsg && (
         <div className="qa-edit-backdrop" onClick={() => setEditingMsg(null)}>
-          <div className="qa-edit-dialog" role="dialog" aria-label="编辑消息" onClick={(e) => e.stopPropagation()}>
+          <div className="qa-edit-dialog" role="dialog" aria-label="修改消息" onClick={(e) => e.stopPropagation()}>
             <div className="qa-edit-head">
-              <span className="qa-edit-title">编辑消息（未渲染原始内容）</span>
+              <span className="qa-edit-title">修改消息（原始内容）</span>
               <button type="button" className="qa-icon-btn" onClick={() => setEditingMsg(null)} aria-label="关闭">
                 <X size={16} />
               </button>
@@ -1255,15 +1387,126 @@ export function PhoneQaApp({ onClose, onNotice }: PhoneQaAppProps) {
               onChange={(e) => setEditText(e.target.value)}
               spellCheck={false}
               autoFocus
+              aria-label="消息原始内容"
               placeholder="这里显示的是消息的原始内容，不会被前端渲染，可放心查看特殊标签。"
             />
+            {editingMsg.role === "user" && editImages.length > 0 && (
+              <div className="qa-attach-strip">
+                {editImages.map((url, index) => (
+                  <div className="qa-attach-thumb" key={index}>
+                    <button type="button" className="qa-attach-view" onClick={() => setViewerImage(url)} aria-label="查看图片">
+                      <img src={url} alt="" />
+                    </button>
+                    <button
+                      type="button"
+                      className="qa-attach-remove"
+                      onClick={() => setEditImages((current) => current.filter((_, candidateIndex) => candidateIndex !== index))}
+                      aria-label="移除图片"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {editingMsg.role === "user" && editFiles.length > 0 && (
+              <div className="qa-file-strip">
+                {editFiles.map((file) => (
+                  <span className="qa-file-chip is-removable" key={file.name} title={file.name}>
+                    <FileText size={13} />
+                    <span>{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditFiles((current) => current.filter((candidate) => candidate.name !== file.name))}
+                      aria-label={`移除附件 ${file.name}`}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {editingMsg.role === "user" && (
+              <div className="qa-edit-attachment-row">
+                <input
+                  ref={editFileInputRef}
+                  type="file"
+                  accept=".txt,.md,.json,.csv,.js,.ts,.tsx,.jsx,.html,.css"
+                  multiple
+                  hidden
+                  onChange={(event) => {
+                    handlePickTextFiles(event.target.files, "edit");
+                    event.currentTarget.value = "";
+                  }}
+                />
+                {visionEnabled && (
+                  <input
+                    ref={editImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    hidden
+                    onChange={(event) => {
+                      handlePickImages(event.target.files, "edit");
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                )}
+                <div className="qa-attach-menu-wrap">
+                  <button
+                    type="button"
+                    className="qa-circle-btn qa-attach-btn"
+                    onClick={() => setEditAttachMenuOpen((open) => !open)}
+                    aria-label="添加附件或图片"
+                    aria-expanded={editAttachMenuOpen}
+                  >
+                    <Plus size={17} />
+                  </button>
+                  {editAttachMenuOpen && (
+                    <div className="qa-attach-menu is-edit">
+                      <button type="button" onClick={() => { editFileInputRef.current?.click(); setEditAttachMenuOpen(false); }}>
+                        <Paperclip size={15} />
+                        上传附件
+                      </button>
+                      {visionEnabled && (
+                        <button type="button" onClick={() => { editImageInputRef.current?.click(); setEditAttachMenuOpen(false); }}>
+                          <ImageIcon size={15} />
+                          添加图片
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {editingMsg.role === "user" && editResendBlockReason && (
+              <div className="qa-edit-warning" role="status">{editResendBlockReason}</div>
+            )}
+            {editingMsg.role === "user" && !editResendBlockReason && (
+              <div className="qa-edit-hint">保存并发送会删除这条消息及其后续回复，再根据修改后的内容重新生成。</div>
+            )}
             <div className="qa-edit-actions">
               <button type="button" className="qa-devnotice-btn" onClick={() => setEditingMsg(null)}>
                 取消
               </button>
-              <button type="button" className="qa-devnotice-btn is-primary" onClick={handleSaveEdit}>
+              <button
+                type="button"
+                className={`qa-devnotice-btn ${editingMsg.role === "assistant" ? "is-primary" : ""}`}
+                onClick={() => handleSaveEdit(false)}
+                disabled={editIsEmpty || snapshot.isGenerating || snapshot.isCompacting}
+              >
                 保存
               </button>
+              {editingMsg.role === "user" && (
+                <button
+                  type="button"
+                  className="qa-devnotice-btn is-primary"
+                  onClick={() => handleSaveEdit(true)}
+                  disabled={editIsEmpty || Boolean(editResendBlockReason) || snapshot.isGenerating || snapshot.isCompacting}
+                >
+                  保存并发送
+                </button>
+              )}
             </div>
           </div>
         </div>

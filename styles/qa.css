@@ -695,6 +695,42 @@
 .qa-attach-btn {
   color: var(--qa-text-secondary);
 }
+.qa-attach-menu-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+.qa-attach-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid rgba(60, 50, 90, 0.1);
+  border-radius: 13px;
+  background: var(--qa-bg-overlay);
+  box-shadow: 0 8px 24px rgba(40, 34, 60, 0.18);
+}
+.qa-attach-menu button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--qa-text-primary);
+  font: inherit;
+  font-size: 13px;
+  min-height: 44px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.qa-attach-menu button:hover {
+  background: var(--qa-bg-raised);
+}
 .qa-attach-strip {
   display: flex;
   gap: 8px;
@@ -733,6 +769,52 @@
   justify-content: center;
   background: rgba(40, 34, 60, 0.75);
   color: #fff;
+}
+.qa-file-strip,
+.qa-msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.qa-file-strip {
+  padding: 2px 2px 0;
+}
+.qa-msg-files {
+  margin-bottom: 6px;
+}
+.qa-file-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 220px;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 9px;
+  background: rgba(115, 89, 230, 0.09);
+  color: var(--qa-text-secondary);
+  font-size: 12px;
+  line-height: 1.2;
+}
+.qa-file-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qa-file-chip > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin: -6px -5px -6px 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(60, 50, 90, 0.12);
+  color: inherit;
+  cursor: pointer;
 }
 .qa-msg-images {
   display: flex;
@@ -1567,6 +1649,8 @@
 }
 .qa-edit-dialog {
   width: min(100%, 520px);
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1611,6 +1695,37 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+.qa-edit-actions .qa-devnotice-btn {
+  min-height: 44px;
+}
+.qa-edit-attachment-row {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+}
+.qa-edit-warning {
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: rgba(240, 170, 80, 0.12);
+  color: var(--qa-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.qa-edit-hint {
+  color: var(--qa-text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.qa-attach-menu button:focus-visible,
+.qa-file-chip > button:focus-visible,
+.qa-edit-actions button:focus-visible {
+  outline: 2px solid var(--qa-accent);
+  outline-offset: 2px;
+}
+.qa-edit-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* 工坊配置面板 */
