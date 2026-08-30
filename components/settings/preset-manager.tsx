@@ -17,6 +17,7 @@ import {
     getPromptTags as getScopedPromptTags,
     getTagsLabel,
     resolveContentTagLabel,
+    type TagGroupProfile,
 } from "@/lib/content-tag-utils";
 import { buildCustomAppTagGroups, findTagGroupForTags, flattenTagGroups } from "@/lib/custom-app-tag-profiles";
 import { CUSTOM_APPS_UPDATED_EVENT, loadInstalledCustomApps } from "@/lib/custom-app-storage";
@@ -117,6 +118,120 @@ function buildDisplayedPrompts(preset: PresetConfig): Prompt[] {
     return out;
 }
 
+type AppFilterMode = "highlight" | "only-show" | "collapse" | "group-collapse";
+
+type PromptRenderItem =
+    | { type: "item"; prompt: Prompt }
+    | { type: "collapsed"; prompts: Prompt[]; groupKey: string; label: string }
+    | { type: "collapse-header"; groupKey: string; label: string; count: number };
+
+function buildPromptRenderItems(
+    preset: PresetConfig,
+    tagGroups: TagGroupProfile[],
+    filterMode: AppFilterMode,
+    filterTags: Set<string>,
+    expandedGroups: Set<string>,
+): PromptRenderItem[] {
+    const allPrompts = buildDisplayedPrompts(preset);
+    const matchesFilter = (prompt: Prompt) => matchesSelectedAppTags(prompt, filterTags);
+    const hasFilter = filterTags.size > 0;
+
+    if (filterMode === "only-show" && hasFilter) {
+        return allPrompts.filter(matchesFilter).map(prompt => ({ type: "item", prompt }));
+    }
+
+    const getGroupKey = (prompt: Prompt): string => {
+        const promptTags = getPromptTags(prompt);
+        if (promptTags.length === 0) return "__universal__";
+        const group = findTagGroupForTags(tagGroups, promptTags);
+        return group?.tags[0] || promptTags[0];
+    };
+    const getGroupLabel = (tag: string): string => {
+        if (tag === "__universal__") return "通用";
+        return tagGroups.find(group => group.tags[0] === tag)?.label || tag;
+    };
+
+    if (filterMode !== "collapse" && filterMode !== "group-collapse") {
+        return allPrompts.map(prompt => ({ type: "item", prompt }));
+    }
+
+    const makeCollapsedOrExpanded = (prompts: Prompt[], key: string, label: string): PromptRenderItem[] => {
+        if (expandedGroups.has(key)) {
+            return [
+                { type: "collapse-header", groupKey: key, label, count: prompts.length },
+                ...prompts.map(prompt => ({ type: "item" as const, prompt })),
+            ];
+        }
+        return [{ type: "collapsed", prompts, groupKey: key, label }];
+    };
+    const participates = (prompt: Prompt): boolean => !hasFilter || matchesFilter(prompt);
+
+    if (filterMode === "group-collapse") {
+        const byGroup = new Map<string, Prompt[]>();
+        for (const prompt of allPrompts) {
+            if (!participates(prompt)) continue;
+            const groupKey = getGroupKey(prompt);
+            const group = byGroup.get(groupKey) || [];
+            group.push(prompt);
+            byGroup.set(groupKey, group);
+        }
+
+        const result: PromptRenderItem[] = [];
+        const seenGroups = new Set<string>();
+        for (const prompt of allPrompts) {
+            if (!participates(prompt)) {
+                result.push({ type: "item", prompt });
+                continue;
+            }
+            const groupKey = getGroupKey(prompt);
+            if (seenGroups.has(groupKey)) continue;
+            seenGroups.add(groupKey);
+            const group = byGroup.get(groupKey) || [];
+            if (group.length >= 2) {
+                result.push(...makeCollapsedOrExpanded(group, `g-${groupKey}`, getGroupLabel(groupKey)));
+            } else {
+                result.push({ type: "item", prompt });
+            }
+        }
+        return result;
+    }
+
+    const result: PromptRenderItem[] = [];
+    let index = 0;
+    let segmentIndex = 0;
+    while (index < allPrompts.length) {
+        const prompt = allPrompts[index];
+        const groupKey = getGroupKey(prompt);
+        if (!participates(prompt)) {
+            result.push({ type: "item", prompt });
+            index += 1;
+            continue;
+        }
+
+        const group: Prompt[] = [];
+        let nextIndex = index;
+        while (
+            nextIndex < allPrompts.length
+            && participates(allPrompts[nextIndex])
+            && getGroupKey(allPrompts[nextIndex]) === groupKey
+        ) {
+            group.push(allPrompts[nextIndex]);
+            nextIndex += 1;
+        }
+        if (group.length >= 2) {
+            result.push(...makeCollapsedOrExpanded(
+                group,
+                `g-${groupKey}-seg${segmentIndex++}`,
+                getGroupLabel(groupKey),
+            ));
+        } else {
+            result.push({ type: "item", prompt });
+        }
+        index = nextIndex;
+    }
+    return result;
+}
+
 const MASCOT_PRESET_STORAGE_TOOL_NAMES = new Set([
     "创建剧情预设",
     "克隆内置预设",
@@ -166,11 +281,12 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
     // ── 多选模式（右滑选中 / 批量操作 / 多选拖拽） ──
     const [selectMode, setSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [selectionPresetId, setSelectionPresetId] = useState<string | null>(null);
     const [confirmDeleteSelected, setConfirmDeleteSelected] = useState(false);
 
     // ── 按 App 筛选（高亮/仅显示/仅折叠/同类折叠） ──
     const [appFilterOpen, setAppFilterOpen] = useState(false);
-    const [appFilterMode, setAppFilterMode] = useState<"highlight" | "only-show" | "collapse" | "group-collapse">("highlight");
+    const [appFilterMode, setAppFilterMode] = useState<AppFilterMode>("highlight");
     const [appFilterTags, setAppFilterTags] = useState<Set<string>>(new Set()); // 选中的大类 tag 集合（可多选）
     const [expandedCollapseGroups, setExpandedCollapseGroups] = useState<Set<string>>(new Set()); // 已展开的折叠组 key
 
@@ -216,6 +332,43 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
     ], [customApps, presets]);
 
     const tagProfiles = useMemo(() => flattenTagGroups(tagGroups), [tagGroups]);
+    const activePreset = useMemo(
+        () => presets.find(preset => preset.id === editingId) ?? null,
+        [editingId, presets],
+    );
+    const promptRenderItems = useMemo(
+        () => activePreset
+            ? buildPromptRenderItems(activePreset, tagGroups, appFilterMode, appFilterTags, expandedCollapseGroups)
+            : [],
+        [activePreset, appFilterMode, appFilterTags, expandedCollapseGroups, tagGroups],
+    );
+    const visiblePromptIds = useMemo(
+        () => new Set(
+            promptRenderItems
+                .filter((item): item is Extract<PromptRenderItem, { type: "item" }> => item.type === "item")
+                .map(item => item.prompt.identifier),
+        ),
+        [promptRenderItems],
+    );
+    const actionableSelectedIds = useMemo(() => {
+        if (!editingId || selectionPresetId !== editingId) return new Set<string>();
+        return new Set([...selectedIds].filter(identifier => visiblePromptIds.has(identifier)));
+    }, [editingId, selectedIds, selectionPresetId, visiblePromptIds]);
+
+    useEffect(() => {
+        setSelectMode(false);
+        setSelectedIds(new Set());
+        setSelectionPresetId(null);
+        setConfirmDeleteSelected(false);
+    }, [editingId, viewMode]);
+
+    useEffect(() => {
+        setSelectedIds(previous => {
+            const next = new Set([...previous].filter(identifier => visiblePromptIds.has(identifier)));
+            if (next.size === previous.size && [...next].every(identifier => previous.has(identifier))) return previous;
+            return next;
+        });
+    }, [visiblePromptIds]);
 
     const containerRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -505,22 +658,30 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
 
     // ── Prompt reorder (shared by HTML5 drag & touch sort) ──
     // 多选模式下拖动选中的条目 → 整组批量移动；否则单条目移动。
-    const handlePromptReorder = useCallback((fromIndex: number, toIndex: number) => {
+    const handlePromptReorder = useCallback((fromRenderIndex: number, toRenderIndex: number) => {
         if (!editingId) return;
         const preset = presets.find(p => p.id === editingId);
         if (!preset) return;
-        // Build full display list (same logic as render: ordered + orphans, deduped by identifier)
+        const fromRenderItem = promptRenderItems[fromRenderIndex];
+        const toRenderItem = promptRenderItems[toRenderIndex];
+        if (fromRenderItem?.type !== "item" || toRenderItem?.type !== "item") return;
+
+        // DOM 索引来自当前筛选/折叠视图；先按 identifier 映射回完整顺序，避免拖错条目。
         const displayed = buildDisplayedPrompts(preset);
+        const fromIndex = displayed.findIndex(prompt => prompt.identifier === fromRenderItem.prompt.identifier);
+        const toIndex = displayed.findIndex(prompt => prompt.identifier === toRenderItem.prompt.identifier);
+        if (fromIndex < 0 || toIndex < 0) return;
         const dragged = displayed[fromIndex];
-        if (!dragged) return;
 
         let newDisplayed: Prompt[];
-        const isBulk = selectMode && selectedIds.size > 1 && dragged.identifier && selectedIds.has(dragged.identifier);
+        const isBulk = selectMode
+            && actionableSelectedIds.size > 1
+            && actionableSelectedIds.has(dragged.identifier);
         if (isBulk) {
             // 整组选中条目一起移动（选中集内部相对顺序保持不变）
-            const selected = displayed.filter(p => selectedIds.has(p.identifier));
+            const selected = displayed.filter(p => actionableSelectedIds.has(p.identifier));
             if (selected.length === displayed.length) return; // 全选时移动无意义
-            const rest = displayed.filter(p => !selectedIds.has(p.identifier));
+            const rest = displayed.filter(p => !actionableSelectedIds.has(p.identifier));
             // 锚点：向下拖时插到「原位置 > to 的第一个未选中条目」之前；向上拖同理用 >= to
             const anchor = rest.find(p => {
                 const idx = displayed.indexOf(p);
@@ -540,8 +701,9 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                 ? (preset.prompt_order.find(o => o.identifier === p.identifier)?.enabled ?? p.enabled)
                 : p.enabled,
         }));
-        updatePreset(preset.id, { prompts: newDisplayed, prompt_order: newOrder });
-    }, [editingId, presets, selectMode, selectedIds]);
+        // 排序只更新 prompt_order；prompts 是原始数据源，不能用去重后的显示投影覆盖。
+        updatePreset(preset.id, { prompt_order: newOrder });
+    }, [actionableSelectedIds, editingId, presets, promptRenderItems, selectMode]);
 
     const { containerRef: promptListRef, onTouchStart: onPromptTouchStart, onTouchMove: onPromptTouchMove, onTouchEnd: onPromptTouchEnd } = useTouchSort(handlePromptReorder);
 
@@ -550,14 +712,18 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
 
     // ── 多选模式：右滑选中 / 批量操作 / 多选拖拽 ──
     const enterSelectMode = useCallback(() => {
+        if (!editingId) return;
         setSelectMode(true);
+        setSelectionPresetId(editingId);
+        setSelectedIds(new Set());
         setEditingPromptId(null); // 收起展开的编辑，避免手势冲突
         swipe.close();
-    }, [swipe]);
+    }, [editingId, swipe]);
 
     const exitSelectMode = useCallback(() => {
         setSelectMode(false);
         setSelectedIds(new Set());
+        setSelectionPresetId(null);
         swipe.close();
     }, [swipe]);
 
@@ -572,54 +738,57 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
 
     // 右滑条目 → 选中并进入多选模式；已处于多选模式时追加选中
     const handleSwipeRightSelect = useCallback((identifier: string) => {
+        if (!editingId) return;
         setSelectMode(true);
         setEditingPromptId(null);
         setSelectedIds(prev => {
-            const next = new Set(prev);
+            const next = selectionPresetId === editingId ? new Set(prev) : new Set<string>();
             next.add(identifier);
             return next;
         });
+        setSelectionPresetId(editingId);
         swipe.close();
-    }, [swipe]);
+    }, [editingId, selectionPresetId, swipe]);
 
     const selectAllPrompts = useCallback(() => {
-        const preset = presets.find(p => p.id === editingId);
-        if (!preset) return;
-        setSelectedIds(new Set(preset.prompts.map(p => p.identifier)));
-    }, [presets, editingId]);
+        if (!editingId) return;
+        setSelectionPresetId(editingId);
+        setSelectedIds(new Set(visiblePromptIds));
+    }, [editingId, visiblePromptIds]);
 
     const bulkSetEnabled = useCallback((enabled: boolean) => {
         const preset = presets.find(p => p.id === editingId);
-        if (!preset || selectedIds.size === 0) return;
+        if (!preset || actionableSelectedIds.size === 0) return;
         const newPrompts = preset.prompts.map(p =>
-            selectedIds.has(p.identifier) ? { ...p, enabled } : p,
+            actionableSelectedIds.has(p.identifier) ? { ...p, enabled } : p,
         );
         const newOrder = preset.prompt_order?.map(o =>
-            selectedIds.has(o.identifier) ? { ...o, enabled } : o,
+            actionableSelectedIds.has(o.identifier) ? { ...o, enabled } : o,
         );
         updatePreset(preset.id, { prompts: newPrompts, ...(newOrder ? { prompt_order: newOrder } : {}) });
-    }, [presets, editingId, selectedIds]);
+    }, [actionableSelectedIds, presets, editingId]);
 
     const bulkExportSelected = useCallback(async () => {
         const preset = presets.find(p => p.id === editingId);
-        if (!preset || selectedIds.size === 0) return;
-        const selected = preset.prompts.filter(p => selectedIds.has(p.identifier));
+        if (!preset || actionableSelectedIds.size === 0) return;
+        const selected = preset.prompts.filter(p => actionableSelectedIds.has(p.identifier));
         const { downloadFile } = await import("@/lib/download-utils");
         const blob = new Blob([JSON.stringify(selected, null, 2)], { type: "application/json" });
         await downloadFile(blob, `${preset.name || "preset"}-entries.json`);
-    }, [presets, editingId, selectedIds]);
+    }, [actionableSelectedIds, presets, editingId]);
 
     const deleteSelectedPrompts = useCallback(() => {
         const preset = presets.find(p => p.id === editingId);
-        if (!preset || selectedIds.size === 0) return;
-        const newPrompts = preset.prompts.filter(p => !selectedIds.has(p.identifier));
-        const newOrder = (preset.prompt_order || []).filter(o => !selectedIds.has(o.identifier));
+        if (!preset || actionableSelectedIds.size === 0) return;
+        const newPrompts = preset.prompts.filter(p => !actionableSelectedIds.has(p.identifier));
+        const newOrder = (preset.prompt_order || []).filter(o => !actionableSelectedIds.has(o.identifier));
         updatePreset(preset.id, { prompts: newPrompts, prompt_order: newOrder });
-        if (editingPromptId && selectedIds.has(editingPromptId)) setEditingPromptId(null);
+        if (editingPromptId && actionableSelectedIds.has(editingPromptId)) setEditingPromptId(null);
         setSelectedIds(new Set());
+        setSelectionPresetId(null);
         setConfirmDeleteSelected(false);
         setSelectMode(false);
-    }, [presets, editingId, selectedIds, editingPromptId]);
+    }, [actionableSelectedIds, presets, editingId, editingPromptId]);
 
     const insertPromptAfter = (preset: PresetConfig, afterIdentifier: string) => {
         const newPrompt = {
@@ -643,7 +812,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                     ? (preset.prompt_order.find(o => o.identifier === p.identifier)?.enabled ?? p.enabled)
                     : p.enabled),
         }));
-        updatePreset(preset.id, { prompts: displayed, prompt_order: newOrder });
+        updatePreset(preset.id, { prompts: [...preset.prompts, newPrompt], prompt_order: newOrder });
         swipe.close();
         setEditingPromptId(newPrompt.identifier);
         window.setTimeout(() => {
@@ -1194,24 +1363,24 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                     {selectMode && (
                                         <div className="multi-select-float-bar">
                                             <div className="msfb-main">
-                                                <span className="msfb-count">已选 {selectedIds.size} 项</span>
+                                                <span className="msfb-count">已选 {actionableSelectedIds.size} 项</span>
                                                 <button type="button" className="msfb-btn" onClick={selectAllPrompts}>
                                                     <CheckSquare size={15} strokeWidth={1.8} />
-                                                    <span>全选</span>
+                                                    <span>全选可见</span>
                                                 </button>
-                                                <button type="button" className="msfb-btn" onClick={() => bulkSetEnabled(true)} disabled={selectedIds.size === 0}>
+                                                <button type="button" className="msfb-btn" onClick={() => bulkSetEnabled(true)} disabled={actionableSelectedIds.size === 0}>
                                                     <Check size={15} strokeWidth={2} />
                                                     <span>启用</span>
                                                 </button>
-                                                <button type="button" className="msfb-btn" onClick={() => bulkSetEnabled(false)} disabled={selectedIds.size === 0}>
+                                                <button type="button" className="msfb-btn" onClick={() => bulkSetEnabled(false)} disabled={actionableSelectedIds.size === 0}>
                                                     <RotateCcw size={15} strokeWidth={1.8} />
                                                     <span>禁用</span>
                                                 </button>
-                                                <button type="button" className="msfb-btn" onClick={() => bulkExportSelected()} disabled={selectedIds.size === 0}>
+                                                <button type="button" className="msfb-btn" onClick={() => bulkExportSelected()} disabled={actionableSelectedIds.size === 0}>
                                                     <Download size={15} strokeWidth={1.8} />
                                                     <span>导出</span>
                                                 </button>
-                                                <button type="button" className="msfb-btn msfb-danger" onClick={() => setConfirmDeleteSelected(true)} disabled={selectedIds.size === 0}>
+                                                <button type="button" className="msfb-btn msfb-danger" onClick={() => setConfirmDeleteSelected(true)} disabled={actionableSelectedIds.size === 0}>
                                                     <Trash2 size={15} strokeWidth={1.8} />
                                                     <span>删除</span>
                                                 </button>
@@ -1230,123 +1399,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                         onTouchEnd={onPromptTouchEnd}
                                         onTouchCancel={onPromptTouchEnd}
                                     >
-                                        {(() => {
-                                            // 按 prompt_order + 孤儿构建唯一列表（identifier 去重，避免重复条目/索引错位/拖错条目）
-                                            const allPrompts = buildDisplayedPrompts(preset);
-
-                                            // ── 按 App 大类筛选（可多选） ──
-                                            const filterTags = appFilterTags;
-                                            const matchesFilter = (p: Prompt) => matchesSelectedAppTags(p, filterTags);
-                                            const hasFilter = filterTags.size > 0;
-
-                                            if (appFilterMode === "only-show" && hasFilter) {
-                                                return allPrompts.filter(matchesFilter).map(p => ({ type: "item" as const, prompt: p }));
-                                            }
-
-                                            // 获取条目所属大类 key：取第一个命中的 group tag；无匹配 → "__universal__"
-                                            const getGroupKeyOf = (p: Prompt): string => {
-                                                const pt = getPromptTags(p);
-                                                if (pt.length === 0) return "__universal__";
-                                                const group = findTagGroupForTags(tagGroups, pt);
-                                                if (group && group.tags.length > 0) return group.tags[0];
-                                                // 无已知 group：用第一个 tag 作为兜底大类
-                                                return pt[0];
-                                            };
-                                            const getGroupLabelOf = (tag: string): string => {
-                                                if (tag === "__universal__") return "通用";
-                                                return tagGroups.find(g => g.tags[0] === tag)?.label || tag;
-                                            };
-
-                                            // collapse / group-collapse 独立于 App 选择：
-                                            // 未选 App → 对所有 App 的条目按大类折叠；选了 App → 只折叠该 App 条目 + 高亮
-                                            if (appFilterMode === "collapse" || appFilterMode === "group-collapse") {
-                                                type RenderItem =
-                                                    | { type: "item"; prompt: Prompt }
-                                                    | { type: "collapsed"; prompts: Prompt[]; groupKey: string; label: string }
-                                                    | { type: "collapse-header"; groupKey: string; label: string; count: number };
-                                                const result: RenderItem[] = [];
-
-                                                const makeCollapsedOrExpanded = (prompts: Prompt[], key: string, label: string): RenderItem[] => {
-                                                    if (expandedCollapseGroups.has(key)) {
-                                                        return [{ type: "collapse-header", groupKey: key, label, count: prompts.length },
-                                                            ...prompts.map(p => ({ type: "item" as const, prompt: p }))];
-                                                    }
-                                                    return [{ type: "collapsed", prompts, groupKey: key, label }];
-                                                };
-
-                                                // 是否参与本次折叠：选了 App 只看该 App；未选 App 全部参与（按各自大类）
-                                                const participates = (p: Prompt): boolean => !hasFilter || matchesFilter(p);
-
-                                                if (appFilterMode === "group-collapse") {
-                                                    // 整组折叠：按大类把所有参与条目收进各自的折叠组
-                                                    const byGroup = new Map<string, Prompt[]>();
-                                                    for (const p of allPrompts) {
-                                                        if (!participates(p)) {
-                                                            // 非参与条目原样保留
-                                                            result.push({ type: "item", prompt: p });
-                                                            continue;
-                                                        }
-                                                        const gk = getGroupKeyOf(p);
-                                                        const arr = byGroup.get(gk) || [];
-                                                        arr.push(p);
-                                                        byGroup.set(gk, arr);
-                                                    }
-                                                    // 把每个折叠组插回正确位置：按该类第一条出现的位置
-                                                    // 而非参与条目已在上面按原位 push，这里原位塞折叠组会乱序；
-                                                    // 简化：按大类在第一处匹配前插入组（保序做法见 collapse，此处用稳定插入）
-                                                    // 采用与 collapse 一致的稳序：重排，组放到该类第一项处。
-                                                    // 这里改用「按原始顺序遍历，遇某大类第一项时插组，非参与项原样」：
-                                                    const ordered: RenderItem[] = [];
-                                                    const seenGroups = new Set<string>();
-                                                    const matchedCount = new Map<string, number>();
-                                                    for (const p of allPrompts) {
-                                                        if (!participates(p)) { ordered.push({ type: "item", prompt: p }); continue; }
-                                                        const gk = getGroupKeyOf(p);
-                                                        const arr = byGroup.get(gk)!;
-                                                        if (!seenGroups.has(gk)) {
-                                                            seenGroups.add(gk);
-                                                            if (arr.length >= 2) {
-                                                                ordered.push(...makeCollapsedOrExpanded(arr, `g-${gk}`, getGroupLabelOf(gk)));
-                                                            } else {
-                                                                arr.forEach(x => ordered.push({ type: "item", prompt: x }));
-                                                            }
-                                                        }
-                                                        matchedCount.set(gk, (matchedCount.get(gk) || 0) + 1);
-                                                        // 属于该组的后续条目已被组收纳，跳过（不再单独 push）
-                                                    }
-                                                    return ordered;
-                                                }
-
-                                                // collapse：相邻折叠 —— 连续同类（同一大类 key）条目折叠成段
-                                                let i = 0;
-                                                let segIdx = 0;
-                                                while (i < allPrompts.length) {
-                                                    const p = allPrompts[i];
-                                                    const gk = getGroupKeyOf(p);
-                                                    if (participates(p)) {
-                                                        // 收集连续同类段
-                                                        const group: Prompt[] = [];
-                                                        let j = i;
-                                                        while (j < allPrompts.length && participates(allPrompts[j]) && getGroupKeyOf(allPrompts[j]) === gk) {
-                                                            group.push(allPrompts[j]);
-                                                            j++;
-                                                        }
-                                                        if (group.length >= 2) {
-                                                            result.push(...makeCollapsedOrExpanded(group, `g-${gk}-seg${segIdx++}`, getGroupLabelOf(gk)));
-                                                        } else {
-                                                            result.push({ type: "item", prompt: p });
-                                                        }
-                                                        i = j;
-                                                    } else {
-                                                        result.push({ type: "item", prompt: p });
-                                                        i++;
-                                                    }
-                                                }
-                                                return result;
-                                            }
-
-                                            return allPrompts.map(p => ({ type: "item" as const, prompt: p }));
-                                        })().flatMap((renderItem, _flatIndex) => {
+                                        {promptRenderItems.flatMap((renderItem, _flatIndex) => {
                                             const toggleExpand = (gKey: string) => {
                                                 setExpandedCollapseGroups(prev => {
                                                     const next = new Set(prev);
@@ -1358,7 +1411,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
 
                                             if (renderItem.type === "collapse-header") {
                                                 return [
-                                                    <div key={`collapse-header-${_flatIndex}`} className="ui-entry-card ui-entry-collapsed-group" data-app-match="1" onClick={() => toggleExpand(renderItem.groupKey)}>
+                                                    <div key={`collapse-header-${renderItem.groupKey}`} className="ui-entry-card ui-entry-collapsed-group" data-app-match="1" onClick={() => toggleExpand(renderItem.groupKey)}>
                                                         <div className="flex items-center justify-between cursor-pointer">
                                                             <div className="flex items-center gap-2">
                                                                 <ChevronDown size={16} />
@@ -1373,7 +1426,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
 
                                             if (renderItem.type === "collapsed") {
                                                 return [
-                                                    <div key={`collapsed-${_flatIndex}`} className="ui-entry-card ui-entry-collapsed-group" data-app-match="1" onClick={() => toggleExpand(renderItem.groupKey)}>
+                                                    <div key={`collapsed-${renderItem.groupKey}`} className="ui-entry-card ui-entry-collapsed-group" data-app-match="1" onClick={() => toggleExpand(renderItem.groupKey)}>
                                                         <div className="flex items-center justify-between cursor-pointer">
                                                             <div className="flex items-center gap-2">
                                                                 <ChevronDown size={16} style={{ transform: "rotate(-90deg)" }} />
@@ -1386,11 +1439,8 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                 ];
                                             }
                                             const prompt = renderItem.prompt;
-                                            const index = (() => {
-                                                const allPrompts = buildDisplayedPrompts(preset);
-                                                return allPrompts.findIndex(p => p.identifier === prompt.identifier);
-                                            })();
                                             const isEditing = editingPromptId === prompt.identifier;
+                                            const isPromptSelected = selectionPresetId === editingId && selectedIds.has(prompt.identifier);
                                             // Effective enabled: prompt_order overrides prompt.enabled
                                             const effectiveEnabled = preset.prompt_order
                                                 ? (preset.prompt_order.find(e => e.identifier === prompt.identifier)?.enabled ?? prompt.enabled)
@@ -1410,7 +1460,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                     leftSwipeDisabled={selectMode}
                                                     rightSwipeEnabled
                                                     onSwipeRight={() => handleSwipeRightSelect(prompt.identifier)}
-                                                    onTouchStart={isEditing ? undefined : (e) => onPromptTouchStart(index, e)}
+                                                    onTouchStart={isEditing ? undefined : (e) => onPromptTouchStart(_flatIndex, e)}
                                                     actions={selectMode ? null : (
                                                         <>
                                                             <button
@@ -1465,7 +1515,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                     <div
                                                     className="ui-entry-card"
                                                     data-active={isEditing}
-                                                    data-selected={selectMode && selectedIds.has(prompt.identifier) ? "true" : undefined}
+                                                    data-selected={selectMode && isPromptSelected ? "true" : undefined}
                                                     data-disabled={!effectiveEnabled}
                                                     data-app-match={(() => {
                                                         if (appFilterTags.size === 0) return undefined;
@@ -1499,12 +1549,12 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                                 <div
                                                                     className="mt-[2px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2"
                                                                     style={{
-                                                                        borderColor: selectedIds.has(prompt.identifier) ? "var(--c-icon-active)" : "rgba(0,0,0,0.25)",
-                                                                        background: selectedIds.has(prompt.identifier) ? "var(--c-icon-active)" : "transparent",
+                                                                        borderColor: isPromptSelected ? "var(--c-icon-active)" : "rgba(0,0,0,0.25)",
+                                                                        background: isPromptSelected ? "var(--c-icon-active)" : "transparent",
                                                                         color: "#fff",
                                                                     }}
                                                                 >
-                                                                    {selectedIds.has(prompt.identifier) && <Check size={13} strokeWidth={3} />}
+                                                                    {isPromptSelected && <Check size={13} strokeWidth={3} />}
                                                                 </div>
                                                             ) : (
                                                                 <div className="ui-entry-icon mt-[2px]">
@@ -1867,7 +1917,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
             {confirmDeleteSelected && editingId && (
                 <ConfirmDialog
                     title="确认批量删除？"
-                    message={`将删除已选的 ${selectedIds.size} 个条目，删除后无法恢复。是否继续？`}
+                    message={`将删除当前可见并已选中的 ${actionableSelectedIds.size} 个条目，删除后无法恢复。是否继续？`}
                     icon={AlertCircle}
                     variant="danger"
                     confirmLabel="确认删除"
