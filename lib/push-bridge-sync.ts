@@ -325,6 +325,9 @@ async function buildScreenChatSnapshot(): Promise<Record<string, unknown> | null
             },
             // 图像识别开关跟随该角色绑定的 API 配置：开 = 服务端注入截图，关 = 代入 OCR 文字
             enableVision: config.enableImageRecognition === true,
+            // 每日上限已取消。新函数不读这个字段；还没重新部署的旧函数会把它钳到 500——
+            // 传 500 让老部署立刻从默认 120 提到它能达到的最大值，重新部署后彻底无限
+            dailyCap: 500,
             // 云端只保留尚未回端的增量；已合并轮次由该水位裁掉，避免和完整本地历史重复。
             ackSequence: loadScreenChatAck(screen.characterId),
             chat: { characterId: screen.characterId, sessionId: session.id, characterName: character.name },
