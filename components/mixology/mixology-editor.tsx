@@ -16,7 +16,6 @@ import type {
 } from "@/lib/mixology/types";
 import { createMixId, formatMixTags, MIX_KIND_LABELS, MIX_PANEL_DEFAULT_LAYOUT, MIX_TAG_MAX, mixPanelLayoutOf, parseMixTags } from "@/lib/mixology/types";
 import { applyMixFilterRules } from "@/lib/mixology/prose";
-import { MIX_DEFAULT_OPENING } from "@/lib/mixology/assembler";
 import { MixCraftSheet, MixPreviewInline, MixStructureSheet } from "./mixology-preview";
 
 const OPENING_SEPARATOR = "\n---\n";
@@ -166,10 +165,6 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
     // 文本类 / 小票 / 装饰 / 尾调
     const [content, setContent] = useState(
         initial && "content" in initial ? (initial as MixTextMaterial).content : "",
-    );
-    // 仅基底：覆写提示词最顶上的「固定开场说明」，留空用系统默认
-    const [opening, setOpening] = useState(
-        initial?.kind === "base" ? ((initial as MixTextMaterial).opening ?? "") : "",
     );
     const [personaUserName, setPersonaUserName] = useState(initial?.kind === "persona" ? initial.userName ?? "" : "");
     const [contract, setContract] = useState(initial?.kind === "ticket" ? initial.contract : "");
@@ -373,12 +368,7 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
             setError(`${MIX_KIND_LABELS[kind]}的内容不能为空。`);
             return;
         }
-        onSave({
-            ...meta,
-            kind,
-            content: content.trim(),
-            ...(kind === "base" ? { opening: opening.trim() || undefined } : {}),
-        } as MixTextMaterial);
+        onSave({ ...meta, kind, content: content.trim() } as MixTextMaterial);
     };
 
     const guide = KIND_GUIDE[kind];
@@ -558,17 +548,6 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                         value={content}
                         onChange={(e) => setContent(e.target.value)}
                         placeholder={TEXT_FIELD_COPY[kind].placeholder}
-                    />
-                </Field>
-            ) : null}
-            {kind === "base" ? (
-                <Field label="开场说明" hint="选填，整份提示词的第一段；留空用系统默认。叠多件基底时第一件写了的生效">
-                    <textarea
-                        className="mix-textarea"
-                        style={{ minHeight: 96 }}
-                        value={opening}
-                        onChange={(e) => setOpening(e.target.value)}
-                        placeholder={MIX_DEFAULT_OPENING}
                     />
                 </Field>
             ) : null}

@@ -184,8 +184,6 @@ type FieldSpec = { key: string; kinds: MixMaterialKind[] };
 /** 各 kind 允许写入的正文字段（元信息 name/hook/tags 全类通用，单独处理） */
 const CONTENT_FIELDS: FieldSpec[] = [
     { key: "content", kinds: ["persona", "base", "flavor", "glass", "strength"] },
-    // 基底可覆写提示词最顶上的「固定开场说明」，留空用系统默认
-    { key: "opening", kinds: ["base"] },
     { key: "userName", kinds: ["persona"] },
     { key: "baseInfo", kinds: ["character"] },
     { key: "personality", kinds: ["character"] },
