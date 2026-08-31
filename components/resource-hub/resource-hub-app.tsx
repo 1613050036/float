@@ -15,6 +15,7 @@ import {
     importResourceHubFile,
     fetchPresetEntry,
     applyPresetEntry,
+    fetchResourceHubText,
     loadResourceHubSource,
     purgeShareIndexCache,
     resolveResourceHubAssetUrl,
@@ -40,7 +41,7 @@ import {
     type ResourceHubUploadConfig,
 } from "@/lib/resource-hub-upload";
 import { avatarBase64, fileToAvatarDataUrl, loadHubProfile, saveHubProfile, type HubProfile } from "@/lib/resource-hub-profile";
-import { fetchMergedContributions, type MergedContribution } from "@/lib/community-contrib";
+import { CONTRIB_WALL_PATH, fetchMergedContributions, parseContribWallJson, type MergedContribution } from "@/lib/community-contrib";
 import {
     ensureIdentityKey,
     exportKeyBundle,
@@ -130,10 +131,26 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
         setSearchQuery("");
         if (buildWall || buildWallState === "loading") return;
         setBuildWallState("loading");
-        fetchMergedContributions()
-            .then(list => { setBuildWall(list); setBuildWallState("idle"); })
-            .catch(() => setBuildWallState("error"));
-    }, [buildWall, buildWallState]);
+        void (async () => {
+            // 首选：share 仓库里的 _wall.json 静态快照，走集市同款三镜像
+            // （jsDelivr 国内可达、免限流、不花函数额度）。自定义资源仓库没有
+            // 这个文件时静默落空，走下面的直连兜底。
+            try {
+                const wall = parseContribWallJson(await fetchResourceHubText(source, CONTRIB_WALL_PATH));
+                if (wall) {
+                    setBuildWall(wall);
+                    setBuildWallState("idle");
+                    return;
+                }
+            } catch { /* 快照读不到 → 直连 GitHub search 兜底 */ }
+            try {
+                setBuildWall(await fetchMergedContributions());
+                setBuildWallState("idle");
+            } catch {
+                setBuildWallState("error");
+            }
+        })();
+    }, [buildWall, buildWallState, source]);
     // 图片全屏预览（点开可保存）
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     // 送花：各资源花数（我的货摊展示用）+ 非阻塞小提示
@@ -935,7 +952,7 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
                             <div className="rh-build-wall-sub">每一条被采纳的改进，都会刻在这里</div>
                             {buildWallState === "loading" && <div className="rh-center-hint">正在读取贡献墙...</div>}
                             {buildWallState === "error" && (
-                                <div className="rh-center-hint">贡献墙暂时读取失败（GitHub 接口限流），稍后再来看看</div>
+                                <div className="rh-center-hint">贡献墙暂时读取失败（网络不通或 GitHub 接口限流），稍后再来看看</div>
                             )}
                             {buildWall && buildWall.length === 0 && (
                                 <div className="rh-center-hint">虚位以待——第一个被采纳的改进会出现在这里</div>

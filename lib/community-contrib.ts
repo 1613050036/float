@@ -201,6 +201,37 @@ export type MergedContribution = {
     url: string;
 };
 
+/** 贡献墙静态快照在 share 仓库里的路径（GitHub Action 定时生成，见 share 仓
+ *  .github/workflows/contrib-wall.yml）。客户端优先经集市三镜像读它——国内可达、
+ *  免限流、零函数额度；读不到或格式不对再退回下方的直连 search 兜底。 */
+export const CONTRIB_WALL_PATH = "_wall.json";
+
+/** 解析 _wall.json 快照；形状不对返回 null（调用方退回直连兜底） */
+export function parseContribWallJson(text: string): MergedContribution[] | null {
+    try {
+        const data = JSON.parse(text) as { items?: unknown };
+        if (!data || !Array.isArray(data.items)) return null;
+        return data.items
+            .map((raw) => {
+                const item = raw as Record<string, unknown>;
+                const number = Number(item.number) || 0;
+                const title = typeof item.title === "string" ? item.title.trim() : "";
+                if (!number || !title) return null;
+                return {
+                    number,
+                    title,
+                    contributor: (typeof item.contributor === "string" && item.contributor.trim()) || "匿名",
+                    mergedAt: typeof item.mergedAt === "string" ? item.mergedAt : "",
+                    url: typeof item.url === "string" ? item.url : "",
+                };
+            })
+            .filter((entry): entry is MergedContribution => Boolean(entry))
+            .sort((a, b) => (b.mergedAt || "").localeCompare(a.mergedAt || ""));
+    } catch {
+        return null;
+    }
+}
+
 /** 已采纳的社区贡献（只取已合并；审核中/未采纳一律不展示） */
 export async function fetchMergedContributions(): Promise<MergedContribution[]> {
     // 上墙的两类：① 已合并的社区 PR；② 「设计被采纳、代码由维护侧移植」的 PR——
