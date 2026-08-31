@@ -183,7 +183,7 @@ export function mixToolReadCraftSpec(args: Record<string, unknown>): ToolResult 
 type FieldSpec = { key: string; kinds: MixMaterialKind[] };
 /** 各 kind 允许写入的正文字段（元信息 name/hook/tags 全类通用，单独处理） */
 const CONTENT_FIELDS: FieldSpec[] = [
-    { key: "content", kinds: ["persona", "base", "flavor", "glass", "strength"] },
+    { key: "content", kinds: ["persona", "preface", "base", "flavor", "glass", "strength"] },
     { key: "userName", kinds: ["persona"] },
     { key: "baseInfo", kinds: ["character"] },
     { key: "personality", kinds: ["character"] },
@@ -367,7 +367,7 @@ function validateMaterial(material: Record<string, unknown>, kind: MixMaterialKi
         case "character":
             if (!Array.isArray(material.openings) || material.openings.length === 0) return "角色卡至少要有一条开场白（openings），否则开不了局。";
             return null;
-        case "persona": case "base": case "flavor": case "glass": case "strength":
+        case "persona": case "preface": case "base": case "flavor": case "glass": case "strength":
             if (!has("content")) return `${MIX_KIND_LABELS[kind]}缺正文（content）。`;
             return null;
         case "ticket":
@@ -478,7 +478,7 @@ export function mixToolUpdateMaterial(args: Record<string, unknown>): ToolResult
 
 // ── 保存配方 ─────────────────────────────────────────
 
-const SINGLE_KINDS: MixMaterialKind[] = ["character", "persona"];
+const SINGLE_KINDS: MixMaterialKind[] = ["character", "persona", "preface"];
 
 export function mixToolSaveRecipe(args: Record<string, unknown>): ToolResult {
     const NAME = "保存配方";

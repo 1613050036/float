@@ -128,8 +128,10 @@ function sectionBlock(title: string, lines: (string | null)[]): string | null {
 }
 
 /**
- * 序言。第一句就把「你演谁」点明——这是整份提示词里最该被看见的一件事，
+ * 序言兜底。第一句就把「你演谁」点明——这是整份提示词里最该被看见的一件事，
  * 放在最顶上比藏在任何一栏资料里都稳。
+ * 序言现在是一种材料（kind: "preface"，择一），对局配了就用材料内容；
+ * 这里是没配时的兜底，内容与官方出厂序言一致，输出与历史版本逐字相同。
  */
 function preamble(charName: string): string {
     return [
@@ -251,6 +253,7 @@ export function assembleMixPrompt(input: MixAssembleInput): MixAssembledPrompt {
         return found as T | undefined;
     };
     const persona = firstOf<MixPersonaMaterial>("persona");
+    const preface = firstOf<MixTextMaterial>("preface");
     // 用户的名字：显式传入 > 面具材料里填的 > 默认「你」
     const userName = input.userName?.trim() || persona?.userName?.trim() || MIX_DEFAULT_USER_NAME;
     // 小票/尾调是多块并行的格：条件命中的全部生效，每件各自成块
@@ -266,7 +269,8 @@ export function assembleMixPrompt(input: MixAssembleInput): MixAssembledPrompt {
     const strengthText = stackBody(m.strength, apply);
 
     const sections: (string | null)[] = [
-        preamble(charName),
+        // 序言：配了序言材料用它的正文（宏照常替换），没配用兜底（=官方出厂文案）
+        preface?.content.trim() ? apply(preface.content.trim()) : preamble(charName),
         baseText ? `# 扮演总纲\n${baseText}` : null,
         sectionBlock("角色资料", [
             `## 角色名\n${charName}`,

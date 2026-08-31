@@ -30,6 +30,10 @@ const KIND_GUIDE: Record<MixMaterialKind, { what: string; where: string }> = {
         what: "这里写用户人设：{{user}} 是谁——身份、性格、外貌，以及与{{char}}之间那段关系里你这一侧的设定。",
         where: "进入「用户资料」段；填了名字就替换全部 {{user}}。",
     },
+    preface: {
+        what: "这里写序言：整份提示词的第一段话，声明这是角色扮演、模型该以什么姿态读后面的内容。开场直接影响全局文风；建议保留一句「越靠后的要求优先级越高」之类的优先级声明。",
+        where: "进入提示词最顶端（扮演总纲之前）；一局只用一件，不配则用官方出厂件。",
+    },
     base: {
         what: "这里写扮演总纲：如何入戏、能否代替玩家发言、是否允许冲突与负面情绪。约束态度，不涉及文笔。",
         where: "进入提示词首段。",
@@ -76,8 +80,12 @@ const KIND_GUIDE: Record<MixMaterialKind, { what: string; where: string }> = {
 const HEADING_NOTE = "要在框里加小标题，用 ### 开头（# 和 ## 已被应用占用）。";
 const HEADING_NOTE_KINDS: MixMaterialKind[] = ["character", "persona", "base", "flavor", "glass", "strength", "ticket", "encore"];
 
-/** 文本类材料（基底/风味/杯型/苦精）的字段名与示例 */
-const TEXT_FIELD_COPY: Record<"base" | "flavor" | "glass" | "strength", { label: string; placeholder: string }> = {
+/** 文本类材料（序言/基底/风味/杯型/苦精）的字段名与示例 */
+const TEXT_FIELD_COPY: Record<"preface" | "base" | "flavor" | "glass" | "strength", { label: string; placeholder: string }> = {
+    preface: {
+        label: "序言",
+        placeholder: "例：\n这是一场沉浸式角色扮演，你要扮演的角色是{{char}}。下方依次给出扮演规则、角色资料与输出要求，请全部遵守；越靠后的要求优先级越高。\n（建议保留一句优先级声明，应用的段落排序依赖它。）",
+    },
     base: {
         label: "扮演总纲",
         placeholder: "例：\n你将完全成为{{char}}，以第一视角活在故事里。\n- 绝不跳出角色，绝不以 AI 自称。\n- 绝不代替{{user}}说话或做决定。\n- 允许出现冲突、拒绝与负面情绪，贴合人设比讨好{{user}}更重要。",
@@ -540,7 +548,7 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                     </Field>
                 </>
             ) : null}
-            {kind === "base" || kind === "flavor" || kind === "glass" || kind === "strength" ? (
+            {kind === "preface" || kind === "base" || kind === "flavor" || kind === "glass" || kind === "strength" ? (
                 <Field label={TEXT_FIELD_COPY[kind].label} hint="必填，可用 {{char}} / {{user}}">
                     <textarea
                         className="mix-textarea"

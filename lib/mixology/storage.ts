@@ -15,8 +15,10 @@ import { MIX_SLOT_ORDER, mixSlotEntries, normalizeMixSlots } from "./types";
 import {
     MIX_BUILTIN_BASE_ID,
     MIX_BUILTIN_GLASS_ID,
+    MIX_BUILTIN_PREFACE_ID,
     createBuiltinBase,
     createBuiltinGlass,
+    createBuiltinPreface,
 } from "./builtin";
 
 const CABINET_KEY = "mixology_cabinet_v1";
@@ -39,6 +41,7 @@ export const MIX_CABINET_UPDATED_EVENT = "mix-cabinet-updated";
 
 /** 官方件不可删除、不可改名（内容永远是当前出厂版） */
 export const MIX_BUILTIN_IDS: readonly string[] = [
+    MIX_BUILTIN_PREFACE_ID,
     MIX_BUILTIN_BASE_ID,
     MIX_BUILTIN_GLASS_ID,
 ];
@@ -49,7 +52,7 @@ export function isMixBuiltinId(id: string): boolean {
 
 /** 出厂件工厂直读：不落库，每次现造，天然随版本更新 */
 export function listMixBuiltins(kind?: MixMaterialKind): MixMaterial[] {
-    const factory: MixMaterial[] = [createBuiltinBase(), createBuiltinGlass()];
+    const factory: MixMaterial[] = [createBuiltinPreface(), createBuiltinBase(), createBuiltinGlass()];
     return kind ? factory.filter((m) => m.kind === kind) : factory;
 }
 

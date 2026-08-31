@@ -1,16 +1,37 @@
 // lib/mixology/builtin.ts
-// 独家特调 · 官方出厂材料：基底/杯型的默认文案。
-// 这两件是"素杯也好喝"的底线——玩家一件配料不装、只拿一张角色卡也能开局。
+// 独家特调 · 官方出厂材料：序言/基底/杯型的默认文案。
+// 这几件是"素杯也好喝"的底线——玩家一件配料不装、只拿一张角色卡也能开局。
 // 文案升级时 bump MIX_BUILTIN_VERSION，storage 会用出厂内容刷新官方件。
 
 import type { MixTextMaterial } from "./types";
 
-export const MIX_BUILTIN_VERSION = 2;
+export const MIX_BUILTIN_VERSION = 3;
 
+export const MIX_BUILTIN_PREFACE_ID = "mix_builtin_preface";
 export const MIX_BUILTIN_BASE_ID = "mix_builtin_base";
 export const MIX_BUILTIN_GLASS_ID = "mix_builtin_glass";
 
 const now = () => Date.now();
+
+/**
+ * 官方序言：提示词最顶上的开场说明。
+ * 内容必须与 assembler 的兜底序言（preamble）语义一致——对局没配序言槽时
+ * 装配器用兜底版逐字复刻历史输出，配了官方件效果等同。
+ * 「越靠后的要求优先级越高」是段落排序的配套约定，自建序言时也建议保留。
+ */
+export function createBuiltinPreface(): MixTextMaterial {
+    return {
+        id: MIX_BUILTIN_PREFACE_ID,
+        kind: "preface",
+        name: "官方 · 标准序言",
+        hook: "出厂自带的开场声明，点明扮演与优先级",
+        author: "独家特调",
+        content: "这是一场沉浸式角色扮演，你要扮演的角色是{{char}}。下方依次给出扮演规则、角色资料与输出要求，请全部遵守；越靠后的要求优先级越高。\n（# 为分段，## 为该段下的具体条目；更深的层级来自创作者自己的分层。）",
+        tags: ["官方"],
+        createdAt: now(),
+        updatedAt: now(),
+    };
+}
 
 /** 官方基底：扮演总纲 */
 export function createBuiltinBase(): MixTextMaterial {

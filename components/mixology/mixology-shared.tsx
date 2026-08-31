@@ -14,6 +14,7 @@ import {
     GlassWater,
     Music4,
     ReceiptText,
+    ScrollText,
     Sparkles,
     UserRound,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import { MixRichText } from "./rich-text";
 const KIND_ICONS: Record<MixMaterialKind, typeof UserRound> = {
     character: UserRound,
     persona: CircleUserRound,
+    preface: ScrollText,
     base: BookOpen,
     flavor: Feather,
     glass: GlassWater,
