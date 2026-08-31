@@ -66,7 +66,8 @@ export type MixHookResult = {
 
 /** 单条文本上限：防止机括往正文里灌一大坨把上下文撑爆 */
 const MAX_TEXT = 20_000;
-const MAX_NOTE = 2_000;
+// note 与正文同档：记忆类机括要把整局存档全量喂回模型，2000 会截在半句话上
+const MAX_NOTE = 20_000;
 /** 存储桶上限：键数与总字节 */
 const MAX_STORE_KEYS = 100;
 const MAX_STORE_BYTES = 100_000;

@@ -226,7 +226,7 @@ export const MIX_CRAFT_PROMPTS: Record<MixMaterialKind, string> = {
 ① 钩子逻辑（纯 JS，可选）：定义这些可选的全局函数，应用会在对应时机调用：
 function onSessionStart(ctx) / onBeforeSend(ctx) / onAfterReply(ctx) / onSessionEnd(ctx)
 ctx 字段：turnCount 已发生轮数；state 记住的值；store 本机括自己的存储；charName / userName；text（发送前 = 玩家这句话，回复后 = 模型正文）；ticketRaw / encoreRaw（回复后的状态栏与小剧场原文）；edited（回复后专用：true 表示这是玩家编辑原文后手动要求的重跑，不是新生成。玩家选「替换」时应用已先把存储回滚到这一轮记账前，钩子照常当新一轮记就行；选「追加」则是在现有存储上再跑一遍。一般无需特殊处理，此标记仅供知情）。
-返回一个普通对象（各项都可省略）：{ text: 改写后的 text, note: 只在这一轮生效的临时提示（≤2000字）, state: 要写入的记住值, store: 覆盖自己的存储 }。
+返回一个普通对象（各项都可省略）：{ text: 改写后的 text, note: 只在这一轮生效的临时提示（≤20000字）, state: 要写入的记住值, store: 覆盖自己的存储 }。
 限制：单次执行 2 秒超时；无网络、碰不到页面；存储上限 100KB。
 
 ② 常驻界面（完整 HTML，可选）：跑在沙盒 iframe 里。用 window.MIX_STATE / window.MIX_STORE 读数据，定义 window.onMixSync(state, store) 接收更新；通过 window.mix 请求动作：setStore(obj)、setState(obj)、say(text) 以玩家身份发言、move(x,y) 与 size(w,h)（占对局画面的百分比）、fit(px) 报内容高度、design(px) 设排版基准宽度、drag(bool)/resize(bool)/chrome(bool)/plate(bool)、z(n)、grab() 在自绘标题条上起拖。界面初始无外壳无底板，位置与尺寸请在代码里用 mix.move / mix.size 自己定好。除自由悬浮外还有五个挂点（材料的 layout.slot 字段声明，代码里不可改）："header"/"inputbar-left"/"inputbar-right" 三个按钮位——宿主在标题栏或输入栏画一颗图标按钮（图标由 layout.icon 给一两个 emoji），点击开合面板，面板宽度铺满、高度随内容，适合骰子/道具/快捷指令这类召之即来的工具；"flow-top"/"flow-bottom" 两个流内位——面板作为内嵌卡进滚动流（画布之下/最新一轮之下），随内容滚动，适合任务看板、选择器这类跟着剧情走的界面。非悬浮挂点下 move/size/drag/resize/chrome 无效，fit/design/plate 照常；按钮位面板关闭时会被卸载，要留住的状态写进 store。界面里可用的数据只有 MIX_STATE 与 MIX_STORE 两个对象——没有角色名、玩家名这类现成变量，需要就让钩子写进 store 再读；写完自查一遍：用到的每个变量都必须已声明。
