@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { AlertCircle, Camera, ChevronDown, Image, Plus, RefreshCw, Sparkles, Trash2, Upload } from "lucide-react";
+import { AlertCircle, Camera, ChevronDown, Image, Info, Plus, RefreshCw, Sparkles, Trash2, Upload } from "lucide-react";
 import type { ImageGenerationSettings as ImageGenerationSettingsType, NovelAiPreset } from "@/lib/settings-types";
 import {
     DEFAULT_IMAGE_GENERATION_SETTINGS,
@@ -20,42 +20,16 @@ import {
 } from "@/lib/image-generation-service";
 import { Alert } from "@/components/ui/feedback";
 import { Input, Select, Textarea, Toggle } from "@/components/ui/form";
+import { ConfirmDialog } from "@/components/ui/modal";
+import {
+    NOVELAI_COMMON_MODELS,
+    NOVELAI_NOISE_SCHEDULE_OPTIONS,
+    NOVELAI_RESOLUTION_OPTIONS,
+    NOVELAI_SAMPLER_OPTIONS,
+} from "@/lib/novelai-image-config";
 
 const SIZE_OPTIONS = ["auto", "1024x1024", "1024x1536", "1536x1024"];
 const QUALITY_OPTIONS = ["auto", "low", "medium", "high"];
-
-const NAI_DEFAULT_MODELS = [
-    "nai-diffusion-4-curated-preview",
-    "nai-diffusion-4-full",
-    "nai-diffusion-3",
-    "nai-diffusion-3-furry",
-];
-
-const NAI_RESOLUTION_OPTIONS = [
-    { value: "832x1216", label: "832x1216 (标准竖向 2:3)" },
-    { value: "1216x832", label: "1216x832 (标准横向 3:2)" },
-    { value: "1024x1024", label: "1024x1024 (正方形 1:1)" },
-    { value: "1024x1536", label: "1024x1536 (大图竖向)" },
-    { value: "1536x1024", label: "1536x1024 (大图横向)" },
-    { value: "512x768", label: "512x768 (小图竖向)" },
-    { value: "768x512", label: "768x512 (小图横向)" },
-];
-
-const NAI_SAMPLER_OPTIONS = [
-    { value: "k_euler", label: "Euler" },
-    { value: "k_euler_ancestral", label: "Euler Ancestral" },
-    { value: "k_dpmpp_2m", label: "DPM++ 2M" },
-    { value: "k_dpmpp_2s_ancestral", label: "DPM++ 2S Ancestral" },
-    { value: "k_dpmpp_sde", label: "DPM++ SDE" },
-    { value: "ddim", label: "DDIM" },
-];
-
-const NAI_NOISE_SCHEDULE_OPTIONS = [
-    { value: "karras", label: "Karras" },
-    { value: "native", label: "Native" },
-    { value: "exponential", label: "Exponential" },
-    { value: "polyexponential", label: "Polyexponential" },
-];
 
 // Some relay APIs (e.g. dzzi 的 gpt-image-2) ignore the `size` param and pick
 // their own aspect ratio. As a fallback we append a natural-language ratio hint
@@ -95,11 +69,13 @@ export function ImageGenerationSettings() {
     const [referencePreviews, setReferencePreviews] = useState<Record<string, string>>({});
     const [models, setModels] = useState<string[]>([]);
     const [isFetchingModels, setIsFetchingModels] = useState(false);
-    const [naiModels, setNaiModels] = useState<string[]>(NAI_DEFAULT_MODELS);
+    const [naiModels, setNaiModels] = useState<string[]>(NOVELAI_COMMON_MODELS);
     const [isFetchingNaiModels, setIsFetchingNaiModels] = useState(false);
     const [isTesting, setIsTesting] = useState(false);
     const [status, setStatus] = useState<Status | null>(null);
+    const [naiTokenStatus, setNaiTokenStatus] = useState<Status | null>(null);
     const [testPreviewUrl, setTestPreviewUrl] = useState<string | null>(null);
+    const [pendingDeletePresetId, setPendingDeletePresetId] = useState<string | null>(null);
 
     useEffect(() => {
         // Sync the ratio hint to the saved size on load, so the hint is present
@@ -196,12 +172,15 @@ export function ImageGenerationSettings() {
         });
     }, [naiSettings, updateNovelAi]);
 
-    const deleteActivePreset = useCallback(() => {
+    const deletePreset = useCallback((presetId: string) => {
         if (naiSettings.presets.length <= 1) return;
-        const nextPresets = naiSettings.presets.filter(p => p.id !== naiSettings.activePresetId);
+        const deletedIndex = naiSettings.presets.findIndex(p => p.id === presetId);
+        if (deletedIndex < 0) return;
+        const nextPresets = naiSettings.presets.filter(p => p.id !== presetId);
+        const nextActivePreset = nextPresets[Math.min(deletedIndex, nextPresets.length - 1)];
         updateNovelAi({
             presets: nextPresets,
-            activePresetId: nextPresets[0].id,
+            activePresetId: nextActivePreset.id,
         });
     }, [naiSettings, updateNovelAi]);
 
@@ -247,21 +226,21 @@ export function ImageGenerationSettings() {
     };
 
     const fetchNaiModels = async () => {
-        setStatus(null);
+        setNaiTokenStatus(null);
         if (!naiSettings.apiKey.trim()) {
-            setStatus({ success: false, message: "请先填写 NovelAI API Token。" });
+            setNaiTokenStatus({ success: false, message: "请先填写 NovelAI API Token。" });
             return;
         }
         setIsFetchingNaiModels(true);
         try {
             const fetched = await fetchNovelAiModels(naiSettings.apiKey);
             setNaiModels(fetched);
-            setStatus({
+            setNaiTokenStatus({
                 success: true,
-                message: `已获取 ${fetched.length} 个 NovelAI 常用模型列表。`,
+                message: `NovelAI Token 有效，已加载 ${fetched.length} 个常用模型。`,
             });
         } catch (err) {
-            setStatus({ success: false, message: err instanceof Error ? err.message : String(err) });
+            setNaiTokenStatus({ success: false, message: err instanceof Error ? err.message : String(err) });
         } finally {
             setIsFetchingNaiModels(false);
         }
@@ -366,21 +345,32 @@ export function ImageGenerationSettings() {
                             <Input
                                 type="password"
                                 value={naiSettings.apiKey}
-                                onChange={(event) => updateNovelAi({ apiKey: event.target.value })}
+                                onChange={(event) => {
+                                    updateNovelAi({ apiKey: event.target.value });
+                                    setNaiTokenStatus(null);
+                                }}
                                 placeholder="pst-..."
                             />
                             <span className="menu-desc ml-1">可在 NovelAI 官网 Account 页面获取 Persistent API Token。</span>
+                            {naiTokenStatus && (
+                                <div role={naiTokenStatus.success ? "status" : "alert"} className="mt-2">
+                                    <Alert variant={naiTokenStatus.success ? "success" : "danger"}>
+                                        <AlertCircle size={16} className="mt-[2px] shrink-0" />
+                                        <span className="break-all leading-[1.5]">{naiTokenStatus.message}</span>
+                                    </Alert>
+                                </div>
+                            )}
                         </div>
 
                         {/* 预设管理栏 */}
                         <div className="flex flex-col gap-2 rounded-xl bg-[var(--c-input)]/40 p-3 border border-[var(--c-card-border)]">
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
                                 <label className="menu-label text-sm font-semibold">NovelAI 参数预设</label>
-                                <div className="flex items-center gap-1">
+                                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                                     <button
                                         type="button"
                                         onClick={addPreset}
-                                        className="ui-btn ui-btn-soft-action !py-1 !px-2 text-xs flex items-center gap-1"
+                                        className="ui-btn ui-btn-soft-action min-h-11 !px-3 !py-2 text-xs flex items-center gap-1"
                                         title="复制当前为新预设"
                                     >
                                         <Plus size={14} />
@@ -389,8 +379,8 @@ export function ImageGenerationSettings() {
                                     {naiSettings.presets.length > 1 && (
                                         <button
                                             type="button"
-                                            onClick={deleteActivePreset}
-                                            className="ui-btn ui-btn-danger !py-1 !px-2 text-xs flex items-center gap-1"
+                                            onClick={() => setPendingDeletePresetId(naiSettings.activePresetId)}
+                                            className="ui-btn ui-btn-danger min-h-11 !px-3 !py-2 text-xs flex items-center gap-1"
                                             title="删除当前选中的预设"
                                         >
                                             <Trash2 size={14} />
@@ -459,12 +449,13 @@ export function ImageGenerationSettings() {
                                     type="button"
                                     onClick={fetchNaiModels}
                                     disabled={isFetchingNaiModels}
-                                    className="ui-btn ui-btn-soft-action shrink-0"
+                                    className="ui-btn ui-btn-soft-action min-h-11 shrink-0"
                                 >
                                     <RefreshCw size={16} className={isFetchingNaiModels ? "animate-spin" : ""} />
-                                    {isFetchingNaiModels ? "拉取中" : "拉取模型"}
+                                    {isFetchingNaiModels ? "验证中" : "验证 Token"}
                                 </button>
                             </div>
+                            <span className="menu-desc ml-1 opacity-70">模型下拉列表内置于应用；“验证 Token”只检查凭证，不会发起生图。</span>
                         </div>
 
                         <div className="flex flex-col gap-1">
@@ -473,7 +464,7 @@ export function ImageGenerationSettings() {
                                 value={naiSettings.activePreset.resolution}
                                 onChange={(event) => updateActivePreset({ resolution: event.target.value })}
                             >
-                                {NAI_RESOLUTION_OPTIONS.map(opt => (
+                                {NOVELAI_RESOLUTION_OPTIONS.map(opt => (
                                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                                 ))}
                             </Select>
@@ -486,7 +477,7 @@ export function ImageGenerationSettings() {
                                     value={naiSettings.activePreset.sampler}
                                     onChange={(event) => updateActivePreset({ sampler: event.target.value })}
                                 >
-                                    {NAI_SAMPLER_OPTIONS.map(opt => (
+                                    {NOVELAI_SAMPLER_OPTIONS.map(opt => (
                                         <option key={opt.value} value={opt.value}>{opt.label}</option>
                                     ))}
                                 </Select>
@@ -498,7 +489,7 @@ export function ImageGenerationSettings() {
                                     value={naiSettings.activePreset.noiseSchedule || "karras"}
                                     onChange={(event) => updateActivePreset({ noiseSchedule: event.target.value })}
                                 >
-                                    {NAI_NOISE_SCHEDULE_OPTIONS.map(opt => (
+                                    {NOVELAI_NOISE_SCHEDULE_OPTIONS.map(opt => (
                                         <option key={opt.value} value={opt.value}>{opt.label}</option>
                                     ))}
                                 </Select>
@@ -558,7 +549,7 @@ export function ImageGenerationSettings() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-2 pt-1">
-                            <label className="flex items-center gap-2 cursor-pointer">
+                            <label className="flex min-h-11 items-center gap-2 cursor-pointer">
                                 <input
                                     type="checkbox"
                                     checked={naiSettings.activePreset.qualityToggle !== false}
@@ -567,7 +558,7 @@ export function ImageGenerationSettings() {
                                 />
                                 <span className="text-xs font-medium">启用质量词 (Quality+)</span>
                             </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
+                            <label className="flex min-h-11 items-center gap-2 cursor-pointer">
                                 <input
                                     type="checkbox"
                                     checked={naiSettings.activePreset.smea === true}
@@ -684,10 +675,12 @@ export function ImageGenerationSettings() {
                 </div>
 
                 {status && (
-                    <Alert variant={status.success ? "success" : "danger"}>
-                        <AlertCircle size={16} className="mt-[2px] shrink-0" />
-                        <span className="break-all leading-[1.5]">{status.message}</span>
-                    </Alert>
+                    <div role={status.success ? "status" : "alert"}>
+                        <Alert variant={status.success ? "success" : "danger"}>
+                            <AlertCircle size={16} className="mt-[2px] shrink-0" />
+                            <span className="break-all leading-[1.5]">{status.message}</span>
+                        </Alert>
+                    </div>
                 )}
                 {testPreviewUrl && (
                     <img
@@ -794,18 +787,27 @@ export function ImageGenerationSettings() {
                 </div>
             </div>
 
-            <div className="flex flex-col gap-2">
-                <p className="settings-menu-section-title">Character References</p>
-                <div className="menu-group">
-                    {characters.length === 0 ? (
-                        <div className="ui-empty py-8">
-                            <Camera size={22} />
-                            <span className="menu-desc">暂无角色。</span>
-                        </div>
-                    ) : characters.map(character => {
-                        const preview = referencePreviews[character.id];
-                        return (
-                            <div key={character.id} className="menu-item">
+            {settings.provider === "novelai" ? (
+                <div className="flex flex-col gap-2">
+                    <p className="settings-menu-section-title">Character References</p>
+                    <Alert variant="info">
+                        <Info size={16} className="mt-[2px] shrink-0" />
+                        <span className="leading-[1.5]">NovelAI 当前仅使用文字提示词生成图片，不会读取角色参考图。已有参考图会保留，切回 OpenAI 兼容引擎后仍可继续使用。</span>
+                    </Alert>
+                </div>
+            ) : (
+                <div className="flex flex-col gap-2">
+                    <p className="settings-menu-section-title">Character References</p>
+                    <div className="menu-group">
+                        {characters.length === 0 ? (
+                            <div className="ui-empty py-8">
+                                <Camera size={22} />
+                                <span className="menu-desc">暂无角色。</span>
+                            </div>
+                        ) : characters.map(character => {
+                            const preview = referencePreviews[character.id];
+                            return (
+                                <div key={character.id} className="menu-item">
                                 <span className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-[var(--c-input)]">
                                     {preview ? (
                                         <img src={preview} alt="" className="h-full w-full object-cover" />
@@ -851,11 +853,28 @@ export function ImageGenerationSettings() {
                                         </button>
                                     )}
                                 </span>
-                            </div>
-                        );
-                    })}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {pendingDeletePresetId && (
+                <ConfirmDialog
+                    title="确认删除预设？"
+                    message={`预设“${naiSettings.presets.find(p => p.id === pendingDeletePresetId)?.name || "未命名预设"}”删除后无法恢复。`}
+                    icon={Trash2}
+                    variant="danger"
+                    confirmLabel="确认删除"
+                    cancelLabel="取消"
+                    onConfirm={() => {
+                        deletePreset(pendingDeletePresetId);
+                        setPendingDeletePresetId(null);
+                    }}
+                    onCancel={() => setPendingDeletePresetId(null)}
+                />
+            )}
 
         </div>
     );

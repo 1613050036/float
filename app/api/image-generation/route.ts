@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ProxyAgent, type Dispatcher } from "undici";
 import JSZip from "jszip";
+import {
+  NOVELAI_DEFAULT_MODEL,
+  getNovelAiResolution,
+  isNovelAiNoiseSchedule,
+  isNovelAiResolution,
+  isNovelAiSampler,
+  isValidNovelAiModel,
+  normalizeNovelAiNoiseSchedule,
+  normalizeNovelAiSampler,
+  normalizeNovelAiScale,
+  normalizeNovelAiSteps,
+} from "@/lib/novelai-image-config";
 
 export const maxDuration = 120;
 
@@ -130,25 +142,71 @@ async function fetchImageUrl(url: string): Promise<{ b64: string; mimeType: stri
 
 async function runNovelAiGeneration(input: ImageGenerationRequest): Promise<{ status: number; body: Record<string, unknown> }> {
   try {
+    if (input.apiKey !== undefined && typeof input.apiKey !== "string") {
+      return { status: 400, body: { error: "NovelAI API Token 格式无效" } };
+    }
+    if (input.model !== undefined && typeof input.model !== "string") {
+      return { status: 400, body: { error: "NovelAI 模型名格式无效" } };
+    }
+    if (input.prompt !== undefined && typeof input.prompt !== "string") {
+      return { status: 400, body: { error: "NovelAI 提示词格式无效" } };
+    }
+    if (input.size !== undefined && typeof input.size !== "string") {
+      return { status: 400, body: { error: "NovelAI 分辨率格式无效" } };
+    }
+    if (input.negativePrompt !== undefined && typeof input.negativePrompt !== "string") {
+      return { status: 400, body: { error: "NovelAI 负面提示词格式无效" } };
+    }
+    if (input.steps !== undefined && typeof input.steps !== "number") {
+      return { status: 400, body: { error: "NovelAI Steps 格式无效" } };
+    }
+    if (input.scale !== undefined && typeof input.scale !== "number") {
+      return { status: 400, body: { error: "NovelAI CFG Scale 格式无效" } };
+    }
+    if (input.sampler !== undefined && typeof input.sampler !== "string") {
+      return { status: 400, body: { error: "NovelAI 采样器格式无效" } };
+    }
+    if (input.noiseSchedule !== undefined && typeof input.noiseSchedule !== "string") {
+      return { status: 400, body: { error: "NovelAI 调度器格式无效" } };
+    }
+    for (const [label, value] of [
+      ["Quality Toggle", input.qualityToggle],
+      ["SMEA", input.smea],
+      ["SMEA DYN", input.smeaDyn],
+    ] as const) {
+      if (value !== undefined && typeof value !== "boolean") {
+        return { status: 400, body: { error: `NovelAI ${label} 格式无效` } };
+      }
+    }
+
     const apiKey = input.apiKey?.trim();
-    const model = input.model?.trim() || "nai-diffusion-4-curated-preview";
+    const model = input.model?.trim() || NOVELAI_DEFAULT_MODEL;
     const prompt = input.prompt?.trim();
 
     if (!apiKey) return { status: 400, body: { error: "缺少 NovelAI API Token" } };
     if (!prompt) return { status: 400, body: { error: "缺少提示词" } };
-
-    // 解析尺寸，默认 832x1216
-    let width = 832;
-    let height = 1216;
-    if (input.size && input.size.includes("x")) {
-      const [wStr, hStr] = input.size.split("x");
-      const w = parseInt(wStr, 10);
-      const h = parseInt(hStr, 10);
-      if (!isNaN(w) && !isNaN(h) && w > 0 && h > 0) {
-        width = w;
-        height = h;
-      }
+    if (prompt.length > 60_000) return { status: 400, body: { error: "NovelAI 提示词过长" } };
+    if (!isValidNovelAiModel(model)) return { status: 400, body: { error: "NovelAI 模型名格式无效" } };
+    if (input.negativePrompt && input.negativePrompt.length > 60_000) {
+      return { status: 400, body: { error: "NovelAI 负面提示词过长" } };
     }
+    if (input.size && !isNovelAiResolution(input.size)) {
+      return { status: 400, body: { error: "不支持的 NovelAI 分辨率" } };
+    }
+    if (input.steps !== undefined && (!Number.isFinite(input.steps) || input.steps < 1 || input.steps > 50)) {
+      return { status: 400, body: { error: "NovelAI Steps 必须在 1 到 50 之间" } };
+    }
+    if (input.scale !== undefined && (!Number.isFinite(input.scale) || input.scale < 1 || input.scale > 30)) {
+      return { status: 400, body: { error: "NovelAI CFG Scale 必须在 1 到 30 之间" } };
+    }
+    if (input.sampler && !isNovelAiSampler(input.sampler)) {
+      return { status: 400, body: { error: "不支持的 NovelAI 采样器" } };
+    }
+    if (input.noiseSchedule && !isNovelAiNoiseSchedule(input.noiseSchedule)) {
+      return { status: 400, body: { error: "不支持的 NovelAI 调度器" } };
+    }
+
+    const { width, height } = getNovelAiResolution(input.size);
 
     const url = "https://image.novelai.net/ai/generate-image";
     const headers: Record<string, string> = {
@@ -161,9 +219,9 @@ async function runNovelAiGeneration(input: ImageGenerationRequest): Promise<{ st
     const parameters: Record<string, unknown> = {
       width,
       height,
-      scale: typeof input.scale === "number" ? input.scale : 6.0,
-      sampler: input.sampler || "k_euler",
-      steps: typeof input.steps === "number" ? input.steps : 28,
+      scale: normalizeNovelAiScale(input.scale),
+      sampler: normalizeNovelAiSampler(input.sampler),
+      steps: normalizeNovelAiSteps(input.steps),
       n_samples: 1,
       ucPreset: 0,
       qualityToggle: input.qualityToggle !== false,
@@ -175,7 +233,7 @@ async function runNovelAiGeneration(input: ImageGenerationRequest): Promise<{ st
       add_original_image: false,
       uncond_scale: 1,
       cfg_rescale: 0,
-      noise_schedule: input.noiseSchedule || "karras",
+      noise_schedule: normalizeNovelAiNoiseSchedule(input.noiseSchedule),
       negative_prompt: input.negativePrompt || "",
     };
 

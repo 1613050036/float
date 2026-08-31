@@ -15,6 +15,20 @@ import type {
 } from "./settings-types";
 import type { UserIdentity } from "@/components/settings/user-identity";
 import { createBuiltinPreset, BUILTIN_PRESET_VERSION } from "./builtin-preset";
+import {
+    NOVELAI_DEFAULT_MODEL,
+    NOVELAI_DEFAULT_NOISE_SCHEDULE,
+    NOVELAI_DEFAULT_RESOLUTION,
+    NOVELAI_DEFAULT_SAMPLER,
+    NOVELAI_DEFAULT_SCALE,
+    NOVELAI_DEFAULT_STEPS,
+    normalizeNovelAiModel,
+    normalizeNovelAiNoiseSchedule,
+    normalizeNovelAiResolution,
+    normalizeNovelAiSampler,
+    normalizeNovelAiScale,
+    normalizeNovelAiSteps,
+} from "./novelai-image-config";
 import { areTagsEqual, normalizePromptScopeTags, normalizeTags } from "./content-tag-utils";
 import {
     readPresetsCache, writePresetsCache,
@@ -648,12 +662,12 @@ export function saveVoiceConfigs(configs: VoiceApiConfig[]): void {
 export const DEFAULT_NOVELAI_PRESET: import("./settings-types").NovelAiPreset = {
     id: "preset_default_anime",
     name: "默认动漫预设",
-    model: "nai-diffusion-4-curated-preview",
-    resolution: "832x1216",
-    steps: 28,
-    scale: 6.0,
-    sampler: "k_euler",
-    noiseSchedule: "karras",
+    model: NOVELAI_DEFAULT_MODEL,
+    resolution: NOVELAI_DEFAULT_RESOLUTION,
+    steps: NOVELAI_DEFAULT_STEPS,
+    scale: NOVELAI_DEFAULT_SCALE,
+    sampler: NOVELAI_DEFAULT_SAMPLER,
+    noiseSchedule: NOVELAI_DEFAULT_NOISE_SCHEDULE,
     positivePrompt: "masterpiece, best quality, amazing quality, very aesthetic, absurdres",
     negativePrompt: "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name",
     qualityToggle: true,
@@ -691,12 +705,12 @@ function normalizeNovelAiPreset(preset: Partial<import("./settings-types").Novel
     return {
         id: typeof preset?.id === "string" && preset.id.trim() ? preset.id.trim() : `preset_nai_${Date.now()}_${index}`,
         name: typeof preset?.name === "string" && preset.name.trim() ? preset.name.trim() : `预设 ${index + 1}`,
-        model: typeof preset?.model === "string" && preset.model.trim() ? preset.model.trim() : "nai-diffusion-4-curated-preview",
-        resolution: typeof preset?.resolution === "string" && preset.resolution.trim() ? preset.resolution.trim() : "832x1216",
-        steps: typeof preset?.steps === "number" && !isNaN(preset.steps) ? Math.max(1, Math.min(50, Math.floor(preset.steps))) : 28,
-        scale: typeof preset?.scale === "number" && !isNaN(preset.scale) ? Math.max(1, Math.min(30, Number(preset.scale.toFixed(1)))) : 6.0,
-        sampler: typeof preset?.sampler === "string" && preset.sampler.trim() ? preset.sampler.trim() : "k_euler",
-        noiseSchedule: typeof preset?.noiseSchedule === "string" && preset.noiseSchedule.trim() ? preset.noiseSchedule.trim() : "karras",
+        model: normalizeNovelAiModel(preset?.model),
+        resolution: normalizeNovelAiResolution(preset?.resolution),
+        steps: normalizeNovelAiSteps(preset?.steps),
+        scale: normalizeNovelAiScale(preset?.scale),
+        sampler: normalizeNovelAiSampler(preset?.sampler),
+        noiseSchedule: normalizeNovelAiNoiseSchedule(preset?.noiseSchedule),
         positivePrompt: typeof preset?.positivePrompt === "string" ? preset.positivePrompt : DEFAULT_NOVELAI_PRESET.positivePrompt,
         negativePrompt: typeof preset?.negativePrompt === "string" ? preset.negativePrompt : DEFAULT_NOVELAI_PRESET.negativePrompt,
         qualityToggle: preset?.qualityToggle !== false,

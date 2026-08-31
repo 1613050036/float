@@ -4,6 +4,15 @@ import JSZip from "jszip";
 import { getChatImageFromIndexedDB } from "./chat-asset-storage";
 import { storeMediaBlob } from "./media-cache-storage";
 import { throwIfAborted } from "./abort-utils";
+import {
+  NOVELAI_COMMON_MODELS,
+  getNovelAiResolution,
+  normalizeNovelAiModel,
+  normalizeNovelAiNoiseSchedule,
+  normalizeNovelAiSampler,
+  normalizeNovelAiScale,
+  normalizeNovelAiSteps,
+} from "./novelai-image-config";
 
 export type ImageGenerationResult = {
   mediaRef: string;
@@ -509,17 +518,7 @@ async function generateNovelAiDirect(params: {
   const { apiKey, preset, prompt, signal } = params;
   throwIfAborted(signal);
 
-  let width = 832;
-  let height = 1216;
-  if (preset.resolution && preset.resolution.includes("x")) {
-    const [wStr, hStr] = preset.resolution.split("x");
-    const w = parseInt(wStr, 10);
-    const h = parseInt(hStr, 10);
-    if (!isNaN(w) && !isNaN(h) && w > 0 && h > 0) {
-      width = w;
-      height = h;
-    }
-  }
+  const { width, height } = getNovelAiResolution(preset.resolution);
 
   const url = "https://image.novelai.net/ai/generate-image";
   const headers: Record<string, string> = {
@@ -529,14 +528,14 @@ async function generateNovelAiDirect(params: {
 
   const body = JSON.stringify({
     input: prompt,
-    model: preset.model || "nai-diffusion-4-curated-preview",
+    model: normalizeNovelAiModel(preset.model),
     action: "generate",
     parameters: {
       width,
       height,
-      scale: typeof preset.scale === "number" ? preset.scale : 6.0,
-      sampler: preset.sampler || "k_euler",
-      steps: typeof preset.steps === "number" ? preset.steps : 28,
+      scale: normalizeNovelAiScale(preset.scale),
+      sampler: normalizeNovelAiSampler(preset.sampler),
+      steps: normalizeNovelAiSteps(preset.steps),
       n_samples: 1,
       ucPreset: 0,
       qualityToggle: preset.qualityToggle !== false,
@@ -548,7 +547,7 @@ async function generateNovelAiDirect(params: {
       add_original_image: false,
       uncond_scale: 1,
       cfg_rescale: 0,
-      noise_schedule: preset.noiseSchedule || "karras",
+      noise_schedule: normalizeNovelAiNoiseSchedule(preset.noiseSchedule),
       negative_prompt: preset.negativePrompt || "",
     },
   });
@@ -613,6 +612,7 @@ async function generateNovelAiViaServer(params: {
   const totalTimer = setTimeout(() => controller.abort(), 180_000);
 
   try {
+    const resolution = getNovelAiResolution(preset.resolution);
     const res = await fetch("/api/image-generation", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-stream-heartbeat": "1" },
@@ -620,14 +620,14 @@ async function generateNovelAiViaServer(params: {
       body: JSON.stringify({
         provider: "novelai",
         apiKey,
-        model: preset.model || "nai-diffusion-4-curated-preview",
+        model: normalizeNovelAiModel(preset.model),
         prompt,
-        size: preset.resolution || "832x1216",
+        size: resolution.value,
         negativePrompt: preset.negativePrompt || "",
-        steps: preset.steps,
-        scale: preset.scale,
-        sampler: preset.sampler,
-        noiseSchedule: preset.noiseSchedule,
+        steps: normalizeNovelAiSteps(preset.steps),
+        scale: normalizeNovelAiScale(preset.scale),
+        sampler: normalizeNovelAiSampler(preset.sampler),
+        noiseSchedule: normalizeNovelAiNoiseSchedule(preset.noiseSchedule),
         qualityToggle: preset.qualityToggle,
         smea: preset.smea,
         smeaDyn: preset.smeaDyn,
@@ -691,24 +691,36 @@ async function generateNovelAiViaServer(params: {
 }
 
 export async function fetchNovelAiModels(apiKey: string): Promise<string[]> {
-  const fallbackModels = [
-    "nai-diffusion-4-curated-preview",
-    "nai-diffusion-4-full",
-    "nai-diffusion-3",
-    "nai-diffusion-3-furry",
-    "nai-diffusion-2",
-    "safe-diffusion",
-    "nai-diffusion",
-  ];
+  const token = apiKey.trim();
+  if (!token) throw new Error("请先填写 NovelAI API Token。");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
     const res = await fetch("https://image.novelai.net/user/data", {
       method: "GET",
-      headers: { Authorization: `Bearer ${apiKey.trim()}` },
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
     });
-    if (!res.ok) return fallbackModels;
-    return fallbackModels;
-  } catch {
-    return fallbackModels;
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      if (res.status === 401 || res.status === 403) {
+        throw new Error("NovelAI API Token 无效或已失效，请重新获取后再试。");
+      }
+      throw new Error(`NovelAI Token 验证失败 ${res.status}${detail ? `: ${detail.slice(0, 160)}` : ""}`);
+    }
+    return [...NOVELAI_COMMON_MODELS];
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("NovelAI Token 验证超时，请检查网络后重试。");
+    }
+    if (error instanceof TypeError) {
+      throw new Error("无法连接 NovelAI，请检查网络后重试。");
+    }
+    if (error instanceof Error) throw error;
+    throw new Error("NovelAI Token 验证失败，请检查网络后重试。");
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -755,7 +767,7 @@ export async function generateImageFromConfiguredApi(params: {
       dataUrl: `data:${mimeType};base64,${data.b64}`,
       blob,
       mimeType,
-      prompt,
+      prompt: fullPrompt,
       usedReferenceImage: false,
       revisedPrompt: data.revisedPrompt,
     };
