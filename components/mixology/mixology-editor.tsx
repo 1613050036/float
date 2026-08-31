@@ -226,7 +226,10 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
     // 与大厅同一个做法：portal 到应用根层去铺满整个画面。
     const [overlayHost, setOverlayHost] = useState<HTMLElement | null>(null);
     useEffect(() => { setOverlayHost(document.querySelector<HTMLElement>(".mixology-app")); }, []);
-    const inOverlay = (node: ReactNode) => (overlayHost ? createPortal(node, overlayHost) : null);
+    // 对局画面（.mix-game）是 z-index:45 的全屏层，速查弹层的 mask 自身只有 40：
+    // 从对局内的编辑器打开会整个被压在画面底下，按钮看着像没反应。套一层
+    // z-index:50 的定位容器抬到对局之上、toast(60)/确认弹窗(70)之下。
+    const inOverlay = (node: ReactNode) => (overlayHost ? createPortal(<div className="mix-overlay-raise">{node}</div>, overlayHost) : null);
     const fileRef = useRef<HTMLInputElement | null>(null);
 
     // 标签：输入的时候就按最终口径拆好给作者看，免得存下来才发现被掐了

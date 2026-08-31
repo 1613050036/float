@@ -1030,6 +1030,15 @@
     height: calc(22px + env(safe-area-inset-bottom, 0px));
 }
 
+/* 编辑器 portal 到应用根层的速查弹层的抬升容器：对局画面（.mix-game）是
+   z-index:45 的全屏层，弹层 mask 自身只有 40，从对局内打开会被整个压在
+   画面底下。抬到 50——对局之上、toast(60)/确认弹窗(70)之下。 */
+.mix-overlay-raise {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+}
+
 @keyframes mixFadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
