@@ -32,6 +32,7 @@ import {
 import { loadFollowUpConfig } from "./settings-storage";
 import { parseAIResponse } from "./rich-message-parser";
 import type { ParsedMessagePart } from "./rich-message-parser";
+import { getStatusRegionConfig, isCustomStatusRegionActive } from "./chat-status-region";
 import { isKnownStickerLabel } from "./sticker-data";
 import { loadCharacters } from "./character-storage";
 import { bgSetInterval, bgSetTimeout } from "./bg-timer";
@@ -902,6 +903,13 @@ export async function parseAndSaveResponse(
 
     const { parts, stateValues, freshStateValues, statusPanel, innerMonologue } = parseAIResponse(rawText, previousState);
 
+    // 自定义状态栏渲染戳：追发/屏幕速聊/离线回传落库的消息此前从不盖
+    // statusRegionMode，custom 模式下 [状态栏] 原文被当 markdown 渲染成一坨
+    // "掉格式"（只有正常聊天路径盖了戳）。与 chat-room 一致：按当前会话配置盖。
+    const statusRegionMode = statusPanel && isCustomStatusRegionActive(getStatusRegionConfig(sessionId))
+        ? ("custom" as const)
+        : undefined;
+
     // Detect call triggers and AI media actions, filter them out (not stored as messages)
     let triggerCall: "voice" | "video" | undefined;
     const charName = resolveFollowUpSenderName(sessionId);
@@ -975,6 +983,7 @@ export async function parseAndSaveResponse(
                 responseBatchId,
                 rawResponseText,
                 statusPanel,
+                statusRegionMode,
                 innerMonologue,
                 reasoningText,
                 stateValues: stateValues.length > 0 ? stateValues : undefined,
@@ -1059,6 +1068,7 @@ export async function parseAndSaveResponse(
             responseBatchId,
             rawResponseText,
             statusPanel: i === metaIdx && statusPanel ? statusPanel : undefined,
+            statusRegionMode: i === metaIdx && statusPanel ? statusRegionMode : undefined,
             innerMonologue: i === metaIdx && innerMonologue ? innerMonologue : undefined,
             reasoningText: i === metaIdx ? reasoningText : undefined,
             stateValues: i === metaIdx && stateValues.length > 0 ? stateValues : undefined,
