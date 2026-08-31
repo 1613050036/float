@@ -388,6 +388,17 @@ export function buildWeixinCloudAssistantFunctionUrl(config: CloudBackupConfig =
 }
 
 /**
+ * 换设备重连用的部署探测：微信云函数没有健康检查接口，但部署流程一定会把
+ * cron 密钥写进备份桶（见 ensureWeixinCloudCronSecret）——桶里有这个对象，
+ * 就说明该项目部署过微信接入。
+ */
+export async function probeWeixinCloudDeployed(): Promise<boolean> {
+  const config = requireCloudBackupConfig();
+  const existing = await getObject(config, WEIXIN_CLOUD_CRON_SECRET_PATH);
+  return Boolean(existing);
+}
+
+/**
  * 定时任务调用云函数用的共享密钥。云函数没有独立配置入口，密钥直接存在用户
  * 自己的备份桶里（云函数用 service_role 读同一对象做比对），小手机负责首次生成。
  */
