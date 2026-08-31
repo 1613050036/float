@@ -127,19 +127,9 @@ function sectionBlock(title: string, lines: (string | null)[]): string | null {
     return `# ${title}\n${kept.join("\n\n")}`;
 }
 
-/**
- * 序言兜底。第一句就把「你演谁」点明——这是整份提示词里最该被看见的一件事，
- * 放在最顶上比藏在任何一栏资料里都稳。
- * 序言现在是一种材料（kind: "preface"，择一），对局配了就用材料内容；
- * 这里是没配时的兜底，内容与官方出厂序言一致，输出与历史版本逐字相同。
- */
-function preamble(charName: string): string {
-    return [
-        `这是一场沉浸式角色扮演，你要扮演的角色是${charName}。`,
-        "下方依次给出扮演规则、角色资料与输出要求，请全部遵守；越靠后的要求优先级越高。",
-        "\n（# 为分段，## 为该段下的具体条目；更深的层级来自创作者自己的分层。）",
-    ].join("");
-}
+// 序言是一种材料（kind: "preface"，择一）：配了就用材料内容，没配这一段就
+// 不存在——与基底/杯型同规则，绝不暗地里垫默认（官方出厂序言在槽位候选
+// 第一位，想要默认文案选它即可）。
 
 // 正文标记协议是 App 的渲染协议，内置且常驻——放在段首、用户杯型内容之后接，
 // 不随材料缺失而消失（装饰 CSS 与正文渲染都依赖这四种标记）。
@@ -269,8 +259,8 @@ export function assembleMixPrompt(input: MixAssembleInput): MixAssembledPrompt {
     const strengthText = stackBody(m.strength, apply);
 
     const sections: (string | null)[] = [
-        // 序言：配了序言材料用它的正文（宏照常替换），没配用兜底（=官方出厂文案）
-        preface?.content.trim() ? apply(preface.content.trim()) : preamble(charName),
+        // 序言：配了才有，宏照常替换；没配整段消失（与其他段一致）
+        preface?.content.trim() ? apply(preface.content.trim()) : null,
         baseText ? `# 扮演总纲\n${baseText}` : null,
         sectionBlock("角色资料", [
             `## 角色名\n${charName}`,

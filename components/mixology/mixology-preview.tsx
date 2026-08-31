@@ -425,7 +425,7 @@ export function MixPreviewInline({
 // 让作者知道自己写的东西最终落在提示词的哪一段、和别的材料怎么排队。
 
 const STRUCTURE_ROWS: { section: string; from: string; kind?: string }[] = [
-    { section: "（开场说明）", from: "序言材料（一局一件），声明这是角色扮演、越靠后优先级越高；没配用官方出厂件", kind: "preface" },
+    { section: "（开场说明）", from: "序言材料（一局一件），声明这是角色扮演、越靠后优先级越高；没配则没有这一段（官方出厂件在槽位候选里可选）", kind: "preface" },
     { section: "# 扮演总纲", from: "基底（叠多件时每件一个 ##，标题取材料名）", kind: "base" },
     { section: "# 角色资料", from: "角色卡，每个框一个 ##：角色名 / 基础信息 / 性格 / 外貌 / 背景", kind: "character" },
     { section: "# 用户资料", from: "面具，每个框一个 ##：名字 / 用户人设（写了才有这一段）", kind: "persona" },

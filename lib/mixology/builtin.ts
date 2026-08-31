@@ -14,9 +14,8 @@ export const MIX_BUILTIN_GLASS_ID = "mix_builtin_glass";
 const now = () => Date.now();
 
 /**
- * 官方序言：提示词最顶上的开场说明。
- * 内容必须与 assembler 的兜底序言（preamble）语义一致——对局没配序言槽时
- * 装配器用兜底版逐字复刻历史输出，配了官方件效果等同。
+ * 官方序言：提示词最顶上的开场说明（历史上曾硬编码在组装器里的那段固定文案）。
+ * 与基底/杯型同规则：槽位里选了才生效，没配提示词就没有这一段，不做暗兜底。
  * 「越靠后的要求优先级越高」是段落排序的配套约定，自建序言时也建议保留。
  */
 export function createBuiltinPreface(): MixTextMaterial {

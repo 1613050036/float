@@ -9,7 +9,7 @@
 export type MixMaterialKind =
     | "character" // 角色卡
     | "persona"   // 面具：用户人设（{{user}} 的名字与设定）
-    | "preface"   // 序言：提示词最顶上的开场说明（择一；不配用官方出厂件）
+    | "preface"   // 序言：提示词最顶上的开场说明（择一；不配则没有这一段）
     | "base"      // 基底：扮演总纲
     | "flavor"    // 风味：文风
     | "glass"     // 杯型：输出格式
