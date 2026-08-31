@@ -130,13 +130,17 @@ function sectionBlock(title: string, lines: (string | null)[]): string | null {
 /**
  * 序言。第一句就把「你演谁」点明——这是整份提示词里最该被看见的一件事，
  * 放在最顶上比藏在任何一栏资料里都稳。
+ * 基底材料可用 opening 字段整段覆写（见 MixTextMaterial.opening）；
+ * 这里是没人覆写时的系统默认，输出与历史版本逐字一致。
  */
+export const MIX_DEFAULT_OPENING = [
+    "这是一场沉浸式角色扮演，你要扮演的角色是{{char}}。",
+    "下方依次给出扮演规则、角色资料与输出要求，请全部遵守；越靠后的要求优先级越高。",
+    "\n（# 为分段，## 为该段下的具体条目；更深的层级来自创作者自己的分层。）",
+].join("");
+
 function preamble(charName: string): string {
-    return [
-        `这是一场沉浸式角色扮演，你要扮演的角色是${charName}。`,
-        "下方依次给出扮演规则、角色资料与输出要求，请全部遵守；越靠后的要求优先级越高。",
-        "\n（# 为分段，## 为该段下的具体条目；更深的层级来自创作者自己的分层。）",
-    ].join("");
+    return MIX_DEFAULT_OPENING.replace("{{char}}", charName);
 }
 
 // 正文标记协议是 App 的渲染协议，内置且常驻——放在段首、用户杯型内容之后接，
@@ -265,8 +269,14 @@ export function assembleMixPrompt(input: MixAssembleInput): MixAssembledPrompt {
     const glassText = stackBody(m.glass, apply);
     const strengthText = stackBody(m.strength, apply);
 
+    // 开场说明：基底可覆写——叠的这几件里第一件写了 opening 的生效（宏照常替换），
+    // 都没写就用系统默认序言。
+    const customOpening = (m.base ?? [])
+        .map((b) => (b.kind === "base" ? (b as MixTextMaterial).opening?.trim() || "" : ""))
+        .find(Boolean);
+
     const sections: (string | null)[] = [
-        preamble(charName),
+        customOpening ? apply(customOpening) : preamble(charName),
         baseText ? `# 扮演总纲\n${baseText}` : null,
         sectionBlock("角色资料", [
             `## 角色名\n${charName}`,

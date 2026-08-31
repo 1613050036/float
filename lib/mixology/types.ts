@@ -198,6 +198,9 @@ export type MixCharacterCard = MixMaterialMeta & {
 export type MixTextMaterial = MixMaterialMeta & {
     kind: "base" | "flavor" | "glass" | "strength";
     content: string;
+    /** 仅基底使用：覆写整份提示词最顶上的「固定开场说明」（可用 {{char}}/{{user}} 宏）。
+     *  留空/缺省用系统默认；叠多件基底时第一件写了的生效。开场影响全局文风，交给创作者调。 */
+    opening?: string;
 };
 
 /** 面具（用户人设）：{{user}} 是谁——名字 + 人设正文，装配成「用户资料」段 */
