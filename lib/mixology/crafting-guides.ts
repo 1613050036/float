@@ -276,7 +276,8 @@ examples＝数组 [{"role":"user"|"char","text":"…"}]，至少 2 轮（4 条�
     persona: `—— 工具字段对照 ——
 name＝材料名；hook＝一句话介绍；tags＝字符串数组；userName＝你的名字；content＝人设正文。`,
     preface: `—— 工具字段对照 ——
-name＝材料名；hook＝一句话介绍；tags＝字符串数组；content＝序言正文（提示词第一段，两三句为宜，建议保留优先级声明）。`,
+name＝材料名；hook＝一句话介绍；tags＝字符串数组；content＝序言正文（提示词第一段，两三句为宜，建议保留优先级声明）；
+sectionTitles＝选填对象，覆写各分段标题让全篇措辞贴合序言基调，键为 base/character/persona/world/flavor/glass/ticket/encore/examples/checklist（对应默认标题 扮演总纲/角色资料/用户资料/世界与剧情/文风/正文输出要求/状态栏/小剧场/示例对话/输出格式检查），只写要改的键，提示词里的交叉引用会跟着换。`,
     base: `—— 工具字段对照 ——
 name＝材料名；hook＝一句话介绍；tags＝字符串数组；content＝扮演总纲正文。`,
     flavor: `—— 工具字段对照 ——

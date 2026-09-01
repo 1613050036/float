@@ -14,7 +14,7 @@ import type {
     MixTextMaterial,
     MixTicketVar,
 } from "@/lib/mixology/types";
-import { createMixId, formatMixTags, MIX_KIND_LABELS, MIX_PANEL_DEFAULT_LAYOUT, MIX_TAG_MAX, mixPanelLayoutOf, parseMixTags } from "@/lib/mixology/types";
+import { createMixId, formatMixTags, MIX_KIND_LABELS, MIX_PANEL_DEFAULT_LAYOUT, MIX_SECTION_TITLE_DEFAULTS, MIX_TAG_MAX, mixPanelLayoutOf, parseMixTags, type MixSectionTitleKey } from "@/lib/mixology/types";
 import { applyMixFilterRules } from "@/lib/mixology/prose";
 import { MixCraftSheet, MixPreviewInline, MixStructureSheet } from "./mixology-preview";
 
@@ -173,6 +173,10 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
     // 文本类 / 小票 / 装饰 / 尾调
     const [content, setContent] = useState(
         initial && "content" in initial ? (initial as MixTextMaterial).content : "",
+    );
+    // 仅序言：各分段标题的覆写（留空的键用默认标题）
+    const [sectionTitles, setSectionTitles] = useState<Partial<Record<MixSectionTitleKey, string>>>(
+        initial?.kind === "preface" ? { ...(initial as MixTextMaterial).sectionTitles } : {},
     );
     const [personaUserName, setPersonaUserName] = useState(initial?.kind === "persona" ? initial.userName ?? "" : "");
     const [contract, setContract] = useState(initial?.kind === "ticket" ? initial.contract : "");
@@ -376,7 +380,20 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
             setError(`${MIX_KIND_LABELS[kind]}的内容不能为空。`);
             return;
         }
-        onSave({ ...meta, kind, content: content.trim() } as MixTextMaterial);
+        // 序言的标题覆写：只存写了内容的键，一项都没写就不带这个字段
+        let cleanedTitles: Partial<Record<MixSectionTitleKey, string>> | undefined;
+        if (kind === "preface") {
+            const entries = (Object.keys(MIX_SECTION_TITLE_DEFAULTS) as MixSectionTitleKey[])
+                .map((key) => [key, (sectionTitles[key] ?? "").replace(/\s+/g, " ").trim()] as const)
+                .filter(([, value]) => value);
+            cleanedTitles = entries.length ? Object.fromEntries(entries) : undefined;
+        }
+        onSave({
+            ...meta,
+            kind,
+            content: content.trim(),
+            ...(kind === "preface" ? { sectionTitles: cleanedTitles } : {}),
+        } as MixTextMaterial);
     };
 
     const guide = KIND_GUIDE[kind];
@@ -557,6 +574,21 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                         onChange={(e) => setContent(e.target.value)}
                         placeholder={TEXT_FIELD_COPY[kind].placeholder}
                     />
+                </Field>
+            ) : null}
+            {kind === "preface" ? (
+                <Field label="自定义分段标题" hint="选填，让各段标题的措辞贴合序言的基调；留空的用默认。提示词里的交叉引用会跟着换">
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {(Object.keys(MIX_SECTION_TITLE_DEFAULTS) as MixSectionTitleKey[]).map((key) => (
+                            <input
+                                key={key}
+                                className="mix-input"
+                                value={sectionTitles[key] ?? ""}
+                                placeholder={MIX_SECTION_TITLE_DEFAULTS[key]}
+                                onChange={(e) => setSectionTitles((prev) => ({ ...prev, [key]: e.target.value }))}
+                            />
+                        ))}
+                    </div>
                 </Field>
             ) : null}
             {kind === "ticket" ? (

@@ -450,6 +450,7 @@ export function MixStructureSheet({ highlight, onClose }: { highlight?: string; 
                     <div className="mix-struct-note">
                         <b>编辑器里的框标题，就是提示词里的标题。</b>没填的框整段消失；
                         文本里的 <code>{"{{char}}"}</code> / <code>{"{{user}}"}</code> 会换成角色名和你填的名字。
+                        下方各段的 # 标题可在序言材料的「自定义分段标题」里整套改写（交叉引用跟着换），这里展示的是默认标题。
                     </div>
 
                     <div className="mix-detail-label" style={{ marginTop: 14 }}>系统提示词（对话历史之前）</div>

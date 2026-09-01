@@ -198,10 +198,41 @@ export type MixCharacterCard = MixMaterialMeta & {
     authorNote?: string;
 };
 
+/** 可由序言材料覆写标题的提示词分段 */
+export type MixSectionTitleKey =
+    | "base"      // 扮演总纲
+    | "character" // 角色资料
+    | "persona"   // 用户资料
+    | "world"     // 世界与剧情
+    | "flavor"    // 文风
+    | "glass"     // 正文输出要求
+    | "ticket"    // 状态栏
+    | "encore"    // 小剧场
+    | "examples"  // 示例对话
+    | "checklist"; // 输出格式检查
+
+/** 各分段的默认标题（编辑器占位符与装配器共用，逐字即历史版本的标题） */
+export const MIX_SECTION_TITLE_DEFAULTS: Record<MixSectionTitleKey, string> = {
+    base: "扮演总纲",
+    character: "角色资料",
+    persona: "用户资料",
+    world: "世界与剧情",
+    flavor: "文风",
+    glass: "正文输出要求",
+    ticket: "状态栏",
+    encore: "小剧场",
+    examples: "示例对话",
+    checklist: "输出格式检查",
+};
+
 /** 纯文本类材料：序言 / 基底 / 风味 / 杯型 / 苦精 */
 export type MixTextMaterial = MixMaterialMeta & {
     kind: "preface" | "base" | "flavor" | "glass" | "strength";
     content: string;
+    /** 仅序言使用：自定义各分段标题（可用 {{char}}/{{user}} 宏），让整份提示词
+     *  的措辞跟上序言定下的基调。缺省/留空的键用默认标题；交叉引用（如输出
+     *  格式检查里提到的段名）会跟着换。 */
+    sectionTitles?: Partial<Record<MixSectionTitleKey, string>>;
 };
 
 /** 面具（用户人设）：{{user}} 是谁——名字 + 人设正文，装配成「用户资料」段 */
