@@ -18,6 +18,7 @@ import { MixRichText } from "./rich-text";
 import { KindGlyph, MixConfirm } from "./mixology-shared";
 import { MixTicketFrame } from "./ticket-frame";
 import { MixMechanismInline, MixMechanismPanel, sendMixDialogue } from "./mechanism-panel";
+import { primeMixAudio } from "@/lib/mixology/audio-player";
 import type { MixProseDialogue } from "./prose-view";
 import { MixSlotEditor } from "./slot-editor";
 import { MixMaterialEditor } from "./mixology-editor";
@@ -321,6 +322,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
             "inputbar-right": [] as typeof panels,
             "flow-top": [] as typeof panels,
             "flow-bottom": [] as typeof panels,
+            hidden: [] as typeof panels,
         };
         for (const item of panels) groups[mixPanelSlotOf(item.layout)].push(item);
         return groups;
@@ -377,6 +379,8 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
     const handleDialogueTap = useCallback((materialId: string, segmentId: string, text: string, turnId: string) => {
         const item = panels.find(({ material }) => material.id === materialId);
         if (!item) return;
+        // 这次点击是宿主拿到的唯一手势：趁现在把播放元素解锁，机括稍后 mix.play 才放得出声（iOS）
+        primeMixAudio();
         const slot = mixPanelSlotOf(item.layout);
         if ((slot === "header" || slot === "inputbar-left" || slot === "inputbar-right") && !(getMixSession(sessionId)?.panelOpen?.[materialId])) {
             toggleDock(materialId);
@@ -978,6 +982,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             onSay={handlePanelSay}
                             connectors={material.connectors}
                             onMark={handlePanelMark}
+                            onToast={onToast}
                         />
                     ))}
                 </div>
@@ -1011,6 +1016,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             onSay={handlePanelSay}
                             connectors={material.connectors}
                             onMark={handlePanelMark}
+                            onToast={onToast}
                         />
                     </div>
                 ))}
@@ -1066,6 +1072,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             onSay={handlePanelSay}
                             connectors={material.connectors}
                             onMark={handlePanelMark}
+                            onToast={onToast}
                         />
                     </div>
                 ))}
@@ -1075,6 +1082,27 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                     </div>
                 ))}
             </div>
+            {/* 无界面的机括：沙盒照常挂着、照常收对白事件，只是什么都不画 */}
+            {slotGroups.hidden.length ? (
+                <div hidden aria-hidden="true">
+                    {slotGroups.hidden.map(({ material }) => (
+                        <MixMechanismInline
+                            key={material.id}
+                            materialId={material.id}
+                            name={material.name}
+                            html={material.panelHtml ?? ""}
+                            state={session.state ?? {}}
+                            store={session.mechanismStore?.[material.id] ?? {}}
+                            onStore={handlePanelStore}
+                            onState={handlePanelState}
+                            onSay={handlePanelSay}
+                            connectors={material.connectors}
+                            onMark={handlePanelMark}
+                            onToast={onToast}
+                        />
+                    ))}
+                </div>
+            ) : null}
             {slotGroups.float.length && !panelsHidden ? (
                 <div className="mix-panel-layer">
                     {slotGroups.float.map(({ material, layout }) => (
@@ -1091,6 +1119,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             onSay={handlePanelSay}
                             connectors={material.connectors}
                             onMark={handlePanelMark}
+                            onToast={onToast}
                             onBox={handlePanelBox}
                         />
                     ))}
@@ -1112,6 +1141,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             onSay={handlePanelSay}
                             connectors={material.connectors}
                             onMark={handlePanelMark}
+                            onToast={onToast}
                         />
                     ))}
                 </div>

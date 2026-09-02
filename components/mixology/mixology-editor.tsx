@@ -842,7 +842,7 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                             style={{ minHeight: 160 }}
                             value={panelHtml}
                             onChange={(e) => setPanelHtml(e.target.value)}
-                            placeholder={"<div style=\"padding:10px\">这里是常驻面板</div>\n\nwindow.mix\n  move(x, y) / size(w, h)         挪自己、改大小（占对局画面的百分比）\n  design(px)                      按多宽排版，画完整体缩放到面板大小；0 = 跟着面板走\n  fit(px)                         报内容多高\n  chrome(on) / plate(on)          要不要应用画的标题条 / 底板，默认都不画\n  drag(on) / resize(on)           玩家能不能拖、能不能缩放\n  z(n)                            叠放次序 0–9\n  grab()                          在自己画的标题条上 pointerdown 时调，接着由应用接管拖动\n  setStore(obj) / setState(obj)   写存储 / 写记住的值\n  say(text)                       以玩家身份说一句\n  call(name, params)              请宿主代调玩家配的连接器，返回 Promise<{status, data}>\n  mark(id, state)                 对白按钮状态回报：busy / playing / 空串\nwindow.MIX_STATE / window.MIX_STORE  当前的值\nwindow.onMixDialogue({id, text, turnId})  玩家点了某句对白后的按钮（材料声明了对白按钮才有）\nwindow.onMixSync(state, store)       值变了会回调"}
+                            placeholder={"<div style=\"padding:10px\">这里是常驻面板</div>\n\nwindow.mix\n  move(x, y) / size(w, h)         挪自己、改大小（占对局画面的百分比）\n  design(px)                      按多宽排版，画完整体缩放到面板大小；0 = 跟着面板走\n  fit(px)                         报内容多高\n  chrome(on) / plate(on)          要不要应用画的标题条 / 底板，默认都不画\n  drag(on) / resize(on)           玩家能不能拖、能不能缩放\n  z(n)                            叠放次序 0–9\n  grab()                          在自己画的标题条上 pointerdown 时调，接着由应用接管拖动\n  setStore(obj) / setState(obj)   写存储 / 写记住的值\n  say(text)                       以玩家身份说一句\n  call(name, params)              请宿主代调玩家配的连接器，返回 Promise<{status, data}>\n  mark(id, state)                 对白按钮状态回报：busy / playing / 空串\n  play(id, audio, type) / stop()  让宿主放一段音频（data: URL / ArrayBuffer / Uint8Array / Blob）\n  toast(text)                     给玩家弹一句短提示\nwindow.MIX_STATE / window.MIX_STORE  当前的值\nwindow.onMixDialogue({id, text, turnId})  玩家点了某句对白后的按钮（材料声明了对白按钮才有）\nwindow.onMixSync(state, store)       值变了会回调"}
                         />
                     </Field>
                     <Field label="需要的连接器" hint="选填，逗号隔开">
@@ -864,7 +864,7 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                                 className="mix-input"
                                 value={dialogueIcon}
                                 onChange={(e) => setDialogueIcon(e.target.value)}
-                                placeholder="图标，如 🔊（留空不画）"
+                                placeholder="图标：speaker / play / translate / note / star / heart… 或一个 emoji"
                                 maxLength={4}
                             />
                             <input
@@ -876,8 +876,9 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                             />
                         </div>
                         <div className="mix-form-note">
-                            填了图标，对局里每句「对白」后面就有这颗按钮；点击时界面收到 window.onMixDialogue({"{"} id, text, turnId {"}"})，
-                            可用 mix.mark(id, &quot;busy&quot; | &quot;playing&quot; | &quot;&quot;) 回报状态改图标。需要有界面代码才收得到。
+                            填了图标，对局里每句「对白」后面就有这颗按钮；写内置名字（speaker / play / translate / note / bookmark / star / heart / quote / spark）画成与特调同色的线性图标，写 emoji 则原样显示。
+                            点击时界面收到 window.onMixDialogue({"{"} id, text, turnId {"}"})，可用 mix.mark(id, &quot;busy&quot; | &quot;playing&quot; | &quot;&quot;) 回报状态，
+                            mix.play(id, 音频) 让宿主播放。需要有界面代码才收得到；不想画面板就把摆放挂点设为 hidden。
                         </div>
                     </Field>
                     <MixPreviewInline

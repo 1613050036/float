@@ -395,9 +395,11 @@ export type MixPanelLayout = {
  * header / inputbar-left / inputbar-right = 宿主在标题栏或输入栏画一颗图标按钮，
  *   点击开合面板（按钮由宿主渲染，样式统一、位置精确，沙盒碰不到宿主排版）；
  * flow-top / flow-bottom = 面板作为一张内嵌卡直接进滚动流（画布之下 / 轮次流末尾），
- *   随内容滚动，autoHeight 常开，不可拖不可缩。
+ *   随内容滚动，autoHeight 常开，不可拖不可缩；
+ * hidden = 不画任何东西，界面代码在看不见的沙盒里后台跑——只靠对白按钮 / 钩子驱动、
+ *   用 mix.play / mix.toast 与玩家交互的机括（比如「朗读」）用它。
  */
-export const MIX_PANEL_SLOTS = ["float", "header", "inputbar-left", "inputbar-right", "flow-top", "flow-bottom"] as const;
+export const MIX_PANEL_SLOTS = ["float", "header", "inputbar-left", "inputbar-right", "flow-top", "flow-bottom", "hidden"] as const;
 export type MixPanelSlot = (typeof MIX_PANEL_SLOTS)[number];
 
 export const MIX_PANEL_SLOT_LABELS: Record<MixPanelSlot, string> = {
@@ -407,6 +409,7 @@ export const MIX_PANEL_SLOT_LABELS: Record<MixPanelSlot, string> = {
     "inputbar-right": "输入栏右侧按钮",
     "flow-top": "正文顶部",
     "flow-bottom": "正文尾部",
+    hidden: "无界面（后台运行）",
 };
 
 /** 拖丢了捡不回来，所以无论怎么拖都至少留这么多在画面里（百分比） */

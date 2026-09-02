@@ -6,8 +6,32 @@
 //   .mix-dialogue 对白 / .mix-thought 心声 / .mix-accent 强调 / .mix-narration 叙述
 //   .mix-say-btn 对白后面的机括按钮（材料声明了 dialogueButton 才有）
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
+import { Bookmark, Heart, Languages, Play, Quote, Sparkles, Star, StickyNote, Volume2 } from "lucide-react";
 import { parseMixProse, type MixProseParagraph } from "@/lib/mixology/prose";
+
+/**
+ * 对白按钮的内置矢量图标：材料的 icon 写这些名字就画成与特调同色系的线性图标，
+ * 不写名字则当 emoji / 单字原样显示。
+ */
+const DIALOGUE_ICONS: Record<string, (size: number) => ReactNode> = {
+    speaker: (size) => <Volume2 size={size} strokeWidth={2} />,
+    play: (size) => <Play size={size} strokeWidth={2} />,
+    translate: (size) => <Languages size={size} strokeWidth={2} />,
+    note: (size) => <StickyNote size={size} strokeWidth={2} />,
+    bookmark: (size) => <Bookmark size={size} strokeWidth={2} />,
+    star: (size) => <Star size={size} strokeWidth={2} />,
+    heart: (size) => <Heart size={size} strokeWidth={2} />,
+    quote: (size) => <Quote size={size} strokeWidth={2} />,
+    spark: (size) => <Sparkles size={size} strokeWidth={2} />,
+};
+
+export const MIX_DIALOGUE_ICON_NAMES = Object.keys(DIALOGUE_ICONS);
+
+export function renderMixDialogueIcon(icon: string, size = 12): ReactNode {
+    const named = DIALOGUE_ICONS[icon.trim().toLowerCase()];
+    return named ? named(size) : icon;
+}
 
 /** 一件声明了对白按钮的机括：宿主替它在每句对白后画一颗图标 */
 export type MixDialogueAction = { key: string; icon: string; title?: string };
@@ -66,7 +90,7 @@ function renderParagraph(paragraph: MixProseParagraph, key: number, dialogue?: M
                                 data-state={dialogue.states?.[`${action.key}|${segmentId}`] || undefined}
                                 onClick={() => dialogue.onTap(action.key, segmentId, said)}
                             >
-                                {action.icon}
+                                {renderMixDialogueIcon(action.icon)}
                             </button>
                         ))}
                     </span>

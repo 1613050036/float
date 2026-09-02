@@ -9,7 +9,8 @@ import { Check, ChevronDown, ChevronLeft, Copy, Play, X } from "lucide-react";
 import { MixProseView, type MixProseDialogue } from "./prose-view";
 import { MixRichText } from "./rich-text";
 import { MixTicketFrame } from "./ticket-frame";
-import { MixMechanismPanel, sendMixDialogue } from "./mechanism-panel";
+import { MixMechanismInline, MixMechanismPanel, sendMixDialogue } from "./mechanism-panel";
+import { primeMixAudio } from "@/lib/mixology/audio-player";
 import { scopeMixCss } from "@/lib/mixology/css-scope";
 import { MIX_HOOK_LABELS, type MixHook } from "@/lib/mixology/mechanism-protocol";
 import { disposeMixSandboxesForMaterial, runMixHook } from "@/lib/mixology/mechanism-runtime";
@@ -229,7 +230,7 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
             actions: [{ key: MECH_MATERIAL, icon: button.icon, title: button.title || target.name }],
             states: marks,
             idPrefix: "preview:",
-            onTap: (_key, segmentId, text) => sendMixDialogue(MECH_MATERIAL, { id: segmentId, text, turnId: "preview" }),
+            onTap: (_key, segmentId, text) => { primeMixAudio(); sendMixDialogue(MECH_MATERIAL, { id: segmentId, text, turnId: "preview" }); },
         };
     }, [target.dialogueButton, target.html, target.name, marks]);
     const [turn, setTurn] = useState(0);
@@ -275,6 +276,9 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
     }, [target.script, turn, state, store]);
 
     const hasPanel = target.html.trim().length > 0;
+    const headless = target.layout.slot === "hidden";
+    const [toasts, setToasts] = useState<string[]>([]);
+    const pushToast = useCallback((text: string) => setToasts((prev) => [...prev.slice(-2), text]), []);
 
     return (
         <>
@@ -286,7 +290,29 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
                 <div className="mix-mech-prose"><MixProseView text={MECH_SAMPLE} dialogue={dialogue} /></div>
                 <div className="mix-mech-input" />
                 <div className="mix-panel-layer">
-                    {target.html.trim() ? (
+                    {target.html.trim() && headless ? (
+                        <div hidden aria-hidden="true">
+                            <MixMechanismInline
+                                materialId={MECH_MATERIAL}
+                                name={target.name || "机括"}
+                                html={target.html}
+                                state={state}
+                                store={store}
+                                onStore={(_id, next) => setStore(next)}
+                                onState={(patch) => setState((prev) => ({ ...prev, ...patch }))}
+                                onSay={(text) => setSaid((prev) => [...prev.slice(-2), text])}
+                                connectors={target.connectors}
+                                onMark={(_id, id, st) => setMarks((prev) => {
+                                    const key = `${MECH_MATERIAL}|${id}`;
+                                    const next = { ...prev };
+                                    if (st) next[key] = st; else delete next[key];
+                                    return next;
+                                })}
+                                onToast={pushToast}
+                            />
+                        </div>
+                    ) : null}
+                    {target.html.trim() && !headless ? (
                         <MixMechanismPanel
                             materialId={MECH_MATERIAL}
                             name={target.name || "机括"}
@@ -305,6 +331,7 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
                                 if (state) next[key] = state; else delete next[key];
                                 return next;
                             })}
+                            onToast={pushToast}
                         />
                     ) : null}
                 </div>
@@ -314,6 +341,8 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
                     已拖动过 · <button type="button" className="mix-mech-reset" onClick={() => setBox(null)}>归位</button>
                 </div>
             ) : null}
+            {headless ? <div className="mix-mech-hint">无界面机括：面板不画，点示例对白后面的按钮可试它的反应</div> : null}
+            {toasts.length ? <div className="mix-mech-hint">机括提示：{toasts[toasts.length - 1]}</div> : null}
             </>
             ) : null}
 

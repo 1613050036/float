@@ -635,7 +635,7 @@ export function mixToolListConnectors(): ToolResult {
         if (Object.keys(c.headers).length) lines.push(`　请求头：${describeConnectorHeaders(c.headers)}`);
     }
     lines.push(`可用预设：${MIX_CONNECTOR_PRESETS.map((p) => `${p.id}（${p.label}）`).join("、")}。`);
-    lines.push("官方机括「朗读」需要一个叫 tts 的连接器：装上它，对局里每句对白后面就有 🔊，点一下念这句。");
+    lines.push("官方机括「朗读」需要一个叫 tts 的连接器：装上它，对局里每句对白后面就有一颗喇叭，点一下念这句。");
     return { name: NAME, success: true, data: lines.join("\n") };
 }
 

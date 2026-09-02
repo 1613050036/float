@@ -29,6 +29,7 @@ import {
 import { normalizeMechanismStore, type MixMechanismStore } from "@/lib/mixology/mechanism-protocol";
 import { normalizeMixConnectorParams, runMixConnector, takeMixConnectorQuota } from "@/lib/mixology/connectors";
 import { findMixConnector } from "@/lib/mixology/storage";
+import { playMixAudio, stopMixAudio } from "@/lib/mixology/audio-player";
 
 /** 界面能请求的动作，就这几条 */
 type PanelCommand =
@@ -46,9 +47,70 @@ type PanelCommand =
     | { name: "drag"; cx: unknown; cy: unknown }
     | { name: "dragEnd" }
     | { name: "call"; id: unknown; connector: unknown; params: unknown }
-    | { name: "mark"; id: unknown; state: unknown };
+    | { name: "mark"; id: unknown; state: unknown }
+    | { name: "play"; id: unknown; audio: unknown; type: unknown }
+    | { name: "stop" }
+    | { name: "toast"; text: unknown };
 
 const MAX_SAY_LENGTH = 2_000;
+const MAX_TOAST_LENGTH = 120;
+const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
+
+/**
+ * 界面递上来的音频转成 Blob：data: URL 字符串、ArrayBuffer、类型化数组、Blob 都收。
+ * 沙盒是不透明源，它自己造的 blob: URL 宿主打不开，所以只收"内容本身"。
+ */
+function audioToBlob(audio: unknown, type: unknown): Blob | null {
+    const mime = typeof type === "string" && type.trim() ? type.trim() : "audio/mpeg";
+    if (audio instanceof Blob) return audio.size <= MAX_AUDIO_BYTES ? audio : null;
+    if (audio instanceof ArrayBuffer) return audio.byteLength <= MAX_AUDIO_BYTES ? new Blob([audio], { type: mime }) : null;
+    if (ArrayBuffer.isView(audio)) return audio.byteLength <= MAX_AUDIO_BYTES ? new Blob([audio as ArrayBufferView<ArrayBuffer>], { type: mime }) : null;
+    if (typeof audio === "string" && audio.startsWith("data:")) {
+        const comma = audio.indexOf(",");
+        if (comma < 0) return null;
+        const head = audio.slice(5, comma);
+        const body = audio.slice(comma + 1);
+        const dataMime = head.split(";")[0] || mime;
+        try {
+            if (/;base64$/i.test(head)) {
+                const bin = atob(body);
+                if (bin.length > MAX_AUDIO_BYTES) return null;
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+                return new Blob([bytes], { type: dataMime });
+            }
+            return new Blob([decodeURIComponent(body)], { type: dataMime });
+        } catch {
+            return null;
+        }
+    }
+    return null;
+}
+
+/**
+ * mix.play：宿主替界面放音频。对白按钮的点击落在宿主上，iframe 没有手势、iOS 会拦它的
+ * play()，所以音频一律递给宿主放（点击时宿主已经 prime 过自己的播放元素）。
+ * 播放状态由宿主直接回报给对白按钮：开始出声标 playing，放完/失败恢复。
+ */
+function handlePlay(
+    command: { id: unknown; audio: unknown; type: unknown },
+    materialId: string,
+    onMark: ((materialId: string, id: string, state: MixDialogueState) => void) | undefined,
+    onToast: ((text: string) => void) | undefined,
+): void {
+    const id = String(command.id ?? "").trim();
+    const blob = audioToBlob(command.audio, command.type);
+    if (!blob) {
+        onToast?.("机括递上来的音频格式不对（要 data: URL、ArrayBuffer 或 Blob，24MB 以内）。");
+        if (id) onMark?.(materialId, id, "");
+        return;
+    }
+    playMixAudio(blob, {
+        onStart: () => { if (id) onMark?.(materialId, id, "playing"); },
+        onEnd: () => { if (id) onMark?.(materialId, id, ""); },
+        onError: (message) => { if (id) onMark?.(materialId, id, ""); onToast?.(message); },
+    });
+}
 
 // ── 对白按钮：宿主 → 界面的事件通道 ─────────────────────
 // 宿主在每句「对白」后画的小图标被点了，把这句话递给声明了对白按钮的那件机括。
@@ -208,7 +270,14 @@ export function buildPanelDoc(html: string, state: MixState, store: MixMechanism
     },
     // 对白按钮的状态回报：宿主把那颗图标画成转圈（busy）/ 播放中（playing）/ 恢复（""）。
     // id 就是 onMixDialogue 收到的那个 id
-    mark: function(id, state){ send("mark", { id: String(id == null ? "" : id), state: state || "" }); }
+    mark: function(id, state){ send("mark", { id: String(id == null ? "" : id), state: state || "" }); },
+    // 让宿主放一段音频（对白按钮的点击在宿主那边，iframe 自己 play 会被 iOS 拦）。
+    // audio 收 data: URL 字符串、ArrayBuffer、Uint8Array 或 Blob；type 是 MIME（默认 audio/mpeg）。
+    // 传了 id（onMixDialogue 收到的那个），那颗按钮会自动标成播放中、放完自动恢复。
+    play: function(id, audio, type){ send("play", { id: id == null ? "" : String(id), audio: audio, type: type || "" }); },
+    stop: function(){ send("stop", {}); },
+    // 给玩家弹一句短提示（出错、缺连接器之类）；无界面的机括靠它说话
+    toast: function(text){ send("toast", { text: String(text == null ? "" : text) }); }
   };
   var callSeq = 0, calls = {};
 
@@ -335,6 +404,7 @@ export function MixMechanismPanel({
     onBox,
     connectors,
     onMark,
+    onToast,
 }: {
     materialId: string;
     name: string;
@@ -351,6 +421,8 @@ export function MixMechanismPanel({
     connectors?: string[];
     /** 界面用 mix.mark 回报某句对白按钮的状态 */
     onMark?: (materialId: string, id: string, state: MixDialogueState) => void;
+    /** 界面用 mix.toast 给玩家弹一句短提示 */
+    onToast?: (text: string) => void;
 }) {
     const frameRef = useRef<HTMLIFrameElement | null>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -639,6 +711,17 @@ export function MixMechanismPanel({
                     if (mark) onMark?.(materialId, mark.id, mark.state);
                     break;
                 }
+                case "play":
+                    handlePlay(command, materialId, onMark, onToast);
+                    break;
+                case "stop":
+                    stopMixAudio();
+                    break;
+                case "toast": {
+                    const text = String(command.text ?? "").trim().slice(0, MAX_TOAST_LENGTH);
+                    if (text) onToast?.(text);
+                    break;
+                }
                 default:
                     // 白名单以外一律不理会
                     break;
@@ -646,7 +729,7 @@ export function MixMechanismPanel({
         };
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [materialId, onStore, onState, onSay, onBox, canDrag, applyBox, scale, post, connectors, onMark, onDialogueBoot]);
+    }, [materialId, onStore, onState, onSay, onBox, canDrag, applyBox, scale, post, connectors, onMark, onDialogueBoot, onToast]);
 
     const style: React.CSSProperties = {
         left: `${box.x}%`,
@@ -763,6 +846,7 @@ export function MixMechanismInline({
     onSay,
     connectors,
     onMark,
+    onToast,
 }: {
     materialId: string;
     name: string;
@@ -778,6 +862,8 @@ export function MixMechanismInline({
     connectors?: string[];
     /** 界面用 mix.mark 回报某句对白按钮的状态 */
     onMark?: (materialId: string, id: string, state: MixDialogueState) => void;
+    /** 界面用 mix.toast 给玩家弹一句短提示 */
+    onToast?: (text: string) => void;
 }) {
     const frameRef = useRef<HTMLIFrameElement | null>(null);
     const stageRef = useRef<HTMLDivElement | null>(null);
@@ -884,6 +970,17 @@ export function MixMechanismInline({
                     if (mark) onMark?.(materialId, mark.id, mark.state);
                     break;
                 }
+                case "play":
+                    handlePlay(command, materialId, onMark, onToast);
+                    break;
+                case "stop":
+                    stopMixAudio();
+                    break;
+                case "toast": {
+                    const text = String(command.text ?? "").trim().slice(0, MAX_TOAST_LENGTH);
+                    if (text) onToast?.(text);
+                    break;
+                }
                 default:
                     // 位置类命令（box/grab/drag/setOpen…）在内嵌形态下没有意义，一律不理会
                     break;
@@ -891,7 +988,7 @@ export function MixMechanismInline({
         };
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [materialId, onStore, onState, onSay, post, connectors, onMark, onDialogueBoot]);
+    }, [materialId, onStore, onState, onSay, post, connectors, onMark, onDialogueBoot, onToast]);
 
     const designWidth = designPx === null ? 0 : designPx;
     const scale = designWidth && width > 0 ? width / designWidth : 1;
