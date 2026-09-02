@@ -23,6 +23,7 @@ import {
     type MixSlotEntry,
     type MixTicketVar,
     normalizeMixConnectorNames,
+    MIX_CONNECTOR_NAME_RE,
 } from "./types";
 import {
     MIX_CABINET_UPDATED_EVENT,
@@ -34,7 +35,11 @@ import {
     saveMixMaterial,
     saveMixRecipe,
     findMixConnector,
+    loadMixConnectors,
+    saveMixConnector,
+    deleteMixConnector,
 } from "./storage";
+import { MIX_CONNECTOR_KEY_PLACEHOLDER, MIX_CONNECTOR_PRESETS, parseMixConnectorHeaders } from "./connectors";
 
 import { buildMixCraftSpec } from "./crafting-guides";
 import { isMixCardFreeform, MIX_CARD_FIELD_KEYS, normalizeMixCardProfile } from "./card-freeform";
@@ -590,4 +595,119 @@ export function mixToolSaveRecipe(args: Record<string, unknown>): ToolResult {
         name: NAME, success: true,
         data: `${existing ? "已更新" : "已调好"}特调「${name}」：${picked.join(" + ")}。用户在独家特调 App 的吧台就能选它开局。`,
     };
+}
+
+// ── 连接器 ──────────────────────────────────────────
+// 连接器是用户自己的外部接口配置（机括界面用 mix.call 请宿主代调）。
+// 小卷可以替用户把连接器建好（预设一键、或自己写地址与模板），但密钥留占位——
+// 密钥不该经过对话与模型，用户到酒柜「连接器」里粘上即可。
+
+/** 请求头里的密钥打码：只告诉模型有没有、是不是还留着占位，不回真实值 */
+function describeConnectorHeaders(headers: Record<string, string>): string {
+    return Object.entries(headers)
+        .map(([key, value]) => {
+            const secret = /authorization|key|token|secret/i.test(key);
+            if (!secret) return `${key}: ${value}`;
+            return `${key}: ${value.includes(MIX_CONNECTOR_KEY_PLACEHOLDER) ? "（密钥还是占位，待用户填写）" : "（已填，不显示）"}`;
+        })
+        .join("；");
+}
+
+export function mixToolListConnectors(): ToolResult {
+    const NAME = "列出连接器";
+    const list = loadMixConnectors();
+    const lines: string[] = [];
+    lines.push(`本机连接器 ${list.length} 个。`);
+    for (const c of list) {
+        lines.push(`· ${c.name}${c.note ? `（${c.note}）` : ""} — ${c.method} ${c.url}，响应 ${c.response}${c.preset ? `，预设 ${c.preset}` : ""}`);
+        if (Object.keys(c.headers).length) lines.push(`　请求头：${describeConnectorHeaders(c.headers)}`);
+    }
+    lines.push(`可用预设：${MIX_CONNECTOR_PRESETS.map((p) => `${p.id}（${p.label}）`).join("、")}。`);
+    lines.push("官方机括「朗读」需要一个叫 tts 的连接器。");
+    return { name: NAME, success: true, data: lines.join("\n") };
+}
+
+type HeadersArg = { headers: Record<string, string> } | { err: string };
+function normalizeHeadersArg(value: unknown): HeadersArg {
+    if (value === undefined) return { headers: {} };
+    if (typeof value === "string") return { headers: parseMixConnectorHeaders(value) };
+    if (!value || typeof value !== "object" || Array.isArray(value)) return { err: 'headers 必须是对象 {"名字":"值"} 或一行一条「名字: 值」的文本。' };
+    const out: Record<string, string> = {};
+    for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+        const name = key.trim();
+        if (!name) continue;
+        if (typeof raw !== "string") return { err: `请求头 ${name} 的值必须是字符串。` };
+        out[name] = raw;
+    }
+    return { headers: out };
+}
+
+export function mixToolSaveConnector(args: Record<string, unknown>): ToolResult {
+    const NAME = "创建连接器";
+    const presetId = text(args.preset).trim();
+    const preset = presetId ? MIX_CONNECTOR_PRESETS.find((p) => p.id === presetId) : null;
+    if (presetId && !preset) {
+        return { name: NAME, success: false, error: `没有叫 ${presetId} 的预设。可选：${MIX_CONNECTOR_PRESETS.map((p) => p.id).join(" / ")}` };
+    }
+    const built = preset?.build();
+    const name = (text(args.name).trim() || built?.name || "").toLowerCase();
+    if (!MIX_CONNECTOR_NAME_RE.test(name)) {
+        return { name: NAME, success: false, error: "name 只能用小写字母、数字、-、_，以字母或数字开头，最长 32 位（如 tts）。" };
+    }
+    const url = text(args.url).trim() || built?.url || "";
+    try {
+        const parsed = new URL(url.replace(/\{\{[^}]*\}\}/g, "x"));
+        if (!/^https?:$/.test(parsed.protocol)) throw new Error("bad");
+    } catch {
+        return { name: NAME, success: false, error: "url 要是完整的 http(s) 地址（用预设可不传）。" };
+    }
+    const headersArg = normalizeHeadersArg(args.headers);
+    if ("err" in headersArg) return { name: NAME, success: false, error: headersArg.err };
+    const headers = Object.keys(headersArg.headers).length ? headersArg.headers : built?.headers ?? {};
+    const method = args.method === "GET" ? "GET" : args.method === "POST" || args.method === undefined ? (built?.method ?? "POST") : null;
+    if (!method) return { name: NAME, success: false, error: 'method 只能是 "POST" 或 "GET"。' };
+    const response = args.response === undefined ? (built?.response ?? "json") : args.response;
+    if (response !== "json" && response !== "text" && response !== "blob") {
+        return { name: NAME, success: false, error: 'response 只能是 "json"（解析成对象）、"text" 或 "blob"（二进制转 data: URL）。' };
+    }
+    const body = args.body === undefined ? (built?.body ?? "") : text(args.body);
+    if (method === "POST" && !body.trim() && !preset) {
+        return { name: NAME, success: false, error: "POST 连接器需要 body 请求体模板（{{参数名}} 占位，可写 {{参数名|默认值}}）。" };
+    }
+
+    const existing = findMixConnector(name);
+    if (existing && args.overwrite !== true) {
+        return { name: NAME, success: false, error: `已经有叫「${name}」的连接器了。要覆盖请再传 overwrite: true；要保留就换个名字。` };
+    }
+    const note = text(args.note).trim() || built?.note;
+    saveMixConnector({
+        id: existing?.id ?? createMixId("mixconn"),
+        name,
+        note: note || undefined,
+        url,
+        method,
+        headers,
+        body,
+        response,
+        preset: preset?.id ?? existing?.preset,
+        createdAt: existing?.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+    });
+    const placeholder = Object.values(headers).some((v) => v.includes(MIX_CONNECTOR_KEY_PLACEHOLDER));
+    return {
+        name: NAME, success: true,
+        data: `连接器「${name}」已${existing ? "更新" : "创建"}（${method} ${url}）。`
+            + (placeholder
+                ? "\n密钥还是占位：请提醒用户到 独家特调 → 酒柜 → 右上角「连接器」→ 点开这一条，把请求头里的「你的密钥」换成自己的 API Key 并保存（可点「发一次试试」验证）。不要向用户索要密钥，密钥不经过对话。"
+                : "\n用户可到 独家特调 → 酒柜 → 「连接器」里查看或试调用。"),
+    };
+}
+
+export function mixToolDeleteConnector(args: Record<string, unknown>): ToolResult {
+    const NAME = "删除连接器";
+    const name = text(args.name).trim().toLowerCase();
+    const existing = name ? findMixConnector(name) : null;
+    if (!existing) return { name: NAME, success: false, error: `本机没有叫「${name || "（空）"}」的连接器。可先用 列出连接器 查看。` };
+    deleteMixConnector(existing.id);
+    return { name: NAME, success: true, data: `连接器「${name}」已删除。用到它的机括调用时会提示用户重新创建。` };
 }

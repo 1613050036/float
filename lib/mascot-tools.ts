@@ -834,6 +834,30 @@ const MIX_MATERIAL_FIELDS = {
         description: "mechanism 选填：摆放对象。slot 挂点：float（默认自由悬浮）/header/inputbar-left/inputbar-right（宿主画图标按钮点击开合面板，配 icon 一两个 emoji）/flow-top/flow-bottom（作为内嵌卡进滚动流）；x/y/w/h 为占画面的百分比，autoHeight 高度随内容",
     },
     panelHtml: { type: "string", description: "mechanism：常驻界面完整 HTML" },
+    connectors: { type: "array", items: { type: "string" }, description: "mechanism 选填：界面要用的连接器名字，如 [\"tts\"]。只有声明过的名字 mix.call 才放行；连接器本身用 创建连接器 建，用户到酒柜「连接器」里填密钥" },
+};
+
+const MIX_LIST_CONNECTORS_SCHEMA = { type: "object", properties: {} };
+
+const MIX_SAVE_CONNECTOR_SCHEMA = {
+    type: "object",
+    properties: {
+        name: { type: "string", description: "连接器名字，机括按它找（小写字母/数字/-/_，如 tts）。用预设时可不传，默认取预设的名字" },
+        preset: { type: "string", enum: ["minimax-cn", "minimax-global"], description: "一键预设：minimax-cn = MiniMax 语音国内版，minimax-global = 海外版。传了预设则 url/headers/body/response 自动填好，密钥留占位由用户自己填" },
+        url: { type: "string", description: "接口地址，可含 {{参数名}} 占位；用预设可不传" },
+        method: { type: "string", enum: ["POST", "GET"], description: "默认 POST" },
+        headers: { type: "object", description: "请求头对象。密钥写占位「你的密钥」，不要向用户索要真实密钥，让用户到酒柜「连接器」里自己填" },
+        body: { type: "string", description: "POST 请求体模板：{{参数名}} 会换成机括 mix.call 传的参数，可写 {{参数名|默认值}}；模板是 JSON 时替进去的字符串自动转义" },
+        response: { type: "string", enum: ["json", "text", "blob"], description: "响应交给机括的形式：json 解析成对象（默认）/ text 字符串 / blob 二进制转 data: URL（音频、图片）" },
+        note: { type: "string", description: "给用户看的一句说明" },
+        overwrite: { type: "boolean", description: "同名连接器已存在时是否覆盖，默认不覆盖" },
+    },
+};
+
+const MIX_DELETE_CONNECTOR_SCHEMA = {
+    type: "object",
+    properties: { name: { type: "string", description: "要删除的连接器名字" } },
+    required: ["name"],
 };
 
 const MIX_CREATE_MATERIAL_SCHEMA = {
@@ -1016,7 +1040,7 @@ export const MASCOT_TOOL_PACKAGES: MascotToolPackage[] = [
     {
         id: "mixology_pack",
         label: "独家特调套件",
-        description: "管理「独家特调」App（调酒式角色扮演）的酒柜材料与配方：11 类材料（角色卡/面具/基底/风味/杯型/苦精/小票/外观/尾调/滤网/机括）的创建修改、配方调制。与聊天系统的角色卡完全无关。写代码类材料前必须先 读取制作说明。",
+        description: "管理「独家特调」App（调酒式角色扮演）的酒柜材料与配方：12 类材料（角色卡/面具/序言/基底/风味/杯型/苦精/小票/外观/尾调/滤网/机括）的创建修改、配方调制，以及机括调外部接口用的连接器。与聊天系统的角色卡完全无关。写代码类材料前必须先 读取制作说明。",
         subTools: [
             { name: "列出酒柜", description: "列出酒柜材料与官方出厂件（含 id/种类/来源），不传 kind 时附配方清单。", parameterSchema: MIX_LIST_CABINET_SCHEMA },
             { name: "读取材料", description: "按 id 或名字读取一件材料的完整字段。导入的他人角色卡正文封存，只回元信息。", parameterSchema: MIX_READ_MATERIAL_SCHEMA },
@@ -1024,6 +1048,9 @@ export const MASCOT_TOOL_PACKAGES: MascotToolPackage[] = [
             { name: "创建材料", description: "新建一件材料入柜。字段按 kind 取用（见各字段说明），执行器会按类校验并给出精确报错。", parameterSchema: MIX_CREATE_MATERIAL_SCHEMA },
             { name: "更新材料", description: "增量修改一件自建材料（只传要改的字段）。官方件与导入件不可改。", parameterSchema: MIX_UPDATE_MATERIAL_SCHEMA },
             { name: "保存配方", description: "把酒柜/官方材料按槽位配成一杯特调（可设生效条件），用户在吧台即可选它开局。", parameterSchema: MIX_SAVE_RECIPE_SCHEMA },
+            { name: "列出连接器", description: "列出用户本机的连接器（机括 mix.call 用的外部接口：名字/地址/密钥是否已填）与可用预设。密钥值不会返回。", parameterSchema: MIX_LIST_CONNECTORS_SCHEMA },
+            { name: "创建连接器", description: "替用户建一个连接器：传 preset 一键生成（如 MiniMax 语音），或自己给 url/headers/body。密钥留占位，由用户到酒柜「连接器」里填。", parameterSchema: MIX_SAVE_CONNECTOR_SCHEMA },
+            { name: "删除连接器", description: "按名字删除一个连接器。", parameterSchema: MIX_DELETE_CONNECTOR_SCHEMA },
         ],
         usageGuide: MIXOLOGY_PROMPT,
     },
@@ -1150,6 +1177,9 @@ const MASCOT_NATIVE_TOOL_NAMES: Record<string, string> = {
     "创建材料": "mascot_mix_create_material",
     "更新材料": "mascot_mix_update_material",
     "保存配方": "mascot_mix_save_recipe",
+    "列出连接器": "mascot_mix_list_connectors",
+    "创建连接器": "mascot_mix_save_connector",
+    "删除连接器": "mascot_mix_delete_connector",
     "生成九宫格CSS": "mascot_build_nine_slice_css",
     "读取角色": "mascot_read_character",
     "创建角色": "mascot_create_character",
@@ -1354,7 +1384,8 @@ export async function executeMascotToolCall(call: ToolCall, ctx: MascotToolConte
             case "移除DIY组件": return await handleRemoveDiyWidget(call.args);
 
             // ─── 独家特调 ───
-            case "列出酒柜": case "读取材料": case "读取制作说明": case "创建材料": case "更新材料": case "保存配方": {
+            case "列出酒柜": case "读取材料": case "读取制作说明": case "创建材料": case "更新材料": case "保存配方":
+            case "列出连接器": case "创建连接器": case "删除连接器": {
                 const mix = await import("./mixology/mascot-tools");
                 switch (call.name) {
                     case "列出酒柜": return mix.mixToolListCabinet(call.args);
@@ -1362,6 +1393,9 @@ export async function executeMascotToolCall(call: ToolCall, ctx: MascotToolConte
                     case "读取制作说明": return mix.mixToolReadCraftSpec(call.args);
                     case "创建材料": return mix.mixToolCreateMaterial(call.args);
                     case "更新材料": return mix.mixToolUpdateMaterial(call.args);
+                    case "列出连接器": return mix.mixToolListConnectors();
+                    case "创建连接器": return mix.mixToolSaveConnector(call.args);
+                    case "删除连接器": return mix.mixToolDeleteConnector(call.args);
                     default: return mix.mixToolSaveRecipe(call.args);
                 }
             }

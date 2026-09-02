@@ -21,6 +21,8 @@ export const MIX_CONNECTOR_MAX_PARAMS_CHARS = 20_000;
 export const MIX_CONNECTOR_MAX_RESPONSE_BYTES = 24 * 1024 * 1024;
 /** 每件机括每分钟最多调多少次 */
 export const MIX_CONNECTOR_RATE_PER_MINUTE = 30;
+/** 预设里密钥位置的占位文案：还留着它就说明用户没填密钥 */
+export const MIX_CONNECTOR_KEY_PLACEHOLDER = "你的密钥";
 
 // ── 预设 ──────────────────────────────────────────────
 
@@ -56,7 +58,7 @@ function minimaxPreset(id: string, label: string, base: string): MixConnectorPre
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                Authorization: "Bearer 你的密钥",
+                Authorization: `Bearer ${MIX_CONNECTOR_KEY_PLACEHOLDER}`,
             },
             body: MINIMAX_TTS_BODY,
             response: "json",
