@@ -15,7 +15,7 @@ import type {
     MixTextMaterial,
     MixTicketVar,
 } from "@/lib/mixology/types";
-import { createMixId, formatMixTags, MIX_KIND_LABELS, MIX_PANEL_DEFAULT_LAYOUT, MIX_SECTION_TITLE_DEFAULTS, MIX_TAG_MAX, mixPanelLayoutOf, normalizeMixConnectorNames, parseMixTags, type MixSectionTitleKey } from "@/lib/mixology/types";
+import { createMixId, formatMixTags, MIX_KIND_LABELS, MIX_PANEL_DEFAULT_LAYOUT, MIX_SECTION_TITLE_DEFAULTS, MIX_TAG_MAX, mixPanelLayoutOf, normalizeMixConnectorNames, normalizeMixDialogueButton, parseMixTags, type MixSectionTitleKey } from "@/lib/mixology/types";
 import { applyMixFilterRules } from "@/lib/mixology/prose";
 import {
     buildMixCardFreeformText,
@@ -213,6 +213,10 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
     // 界面要用的连接器名字（逗号隔开）；只有声明过的名字 mix.call 才放行
     const [connectorsText, setConnectorsText] = useState(initial?.kind === "mechanism" ? (initial.connectors ?? []).join(", ") : "");
     const connectorNames = useMemo(() => normalizeMixConnectorNames(connectorsText), [connectorsText]);
+    // 对白按钮：填了图标，宿主就在每句「对白」后画一颗，点击递进界面（onMixDialogue）
+    const [dialogueIcon, setDialogueIcon] = useState(initial?.kind === "mechanism" ? initial.dialogueButton?.icon ?? "" : "");
+    const [dialogueTitle, setDialogueTitle] = useState(initial?.kind === "mechanism" ? initial.dialogueButton?.title ?? "" : "");
+    const dialogueButton = useMemo(() => normalizeMixDialogueButton({ icon: dialogueIcon, title: dialogueTitle }), [dialogueIcon, dialogueTitle]);
 
     /**
      * 从契约正文里认出「字段名：说明」这样的行，做成一排可点的候选。
@@ -399,6 +403,7 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                 dock: keptDock,
                 panelHtml: panelHtml.trim() || undefined,
                 connectors: connectorNames.length ? connectorNames : undefined,
+                dialogueButton,
             });
             return;
         }
@@ -837,7 +842,7 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                             style={{ minHeight: 160 }}
                             value={panelHtml}
                             onChange={(e) => setPanelHtml(e.target.value)}
-                            placeholder={"<div style=\"padding:10px\">这里是常驻面板</div>\n\nwindow.mix\n  move(x, y) / size(w, h)         挪自己、改大小（占对局画面的百分比）\n  design(px)                      按多宽排版，画完整体缩放到面板大小；0 = 跟着面板走\n  fit(px)                         报内容多高\n  chrome(on) / plate(on)          要不要应用画的标题条 / 底板，默认都不画\n  drag(on) / resize(on)           玩家能不能拖、能不能缩放\n  z(n)                            叠放次序 0–9\n  grab()                          在自己画的标题条上 pointerdown 时调，接着由应用接管拖动\n  setStore(obj) / setState(obj)   写存储 / 写记住的值\n  say(text)                       以玩家身份说一句\n  call(name, params)              请宿主代调玩家配的连接器，返回 Promise<{status, data}>\nwindow.MIX_STATE / window.MIX_STORE  当前的值\nwindow.onMixSync(state, store)       值变了会回调"}
+                            placeholder={"<div style=\"padding:10px\">这里是常驻面板</div>\n\nwindow.mix\n  move(x, y) / size(w, h)         挪自己、改大小（占对局画面的百分比）\n  design(px)                      按多宽排版，画完整体缩放到面板大小；0 = 跟着面板走\n  fit(px)                         报内容多高\n  chrome(on) / plate(on)          要不要应用画的标题条 / 底板，默认都不画\n  drag(on) / resize(on)           玩家能不能拖、能不能缩放\n  z(n)                            叠放次序 0–9\n  grab()                          在自己画的标题条上 pointerdown 时调，接着由应用接管拖动\n  setStore(obj) / setState(obj)   写存储 / 写记住的值\n  say(text)                       以玩家身份说一句\n  call(name, params)              请宿主代调玩家配的连接器，返回 Promise<{status, data}>\n  mark(id, state)                 对白按钮状态回报：busy / playing / 空串\nwindow.MIX_STATE / window.MIX_STORE  当前的值\nwindow.onMixDialogue({id, text, turnId})  玩家点了某句对白后的按钮（材料声明了对白按钮才有）\nwindow.onMixSync(state, store)       值变了会回调"}
                         />
                     </Field>
                     <Field label="需要的连接器" hint="选填，逗号隔开">
@@ -853,6 +858,28 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                             名字用小写字母、数字、-、_。{connectorNames.length ? `将声明：${connectorNames.join("、")}` : ""}
                         </div>
                     </Field>
+                    <Field label="对白按钮" hint="选填">
+                        <div className="mix-conn-two">
+                            <input
+                                className="mix-input"
+                                value={dialogueIcon}
+                                onChange={(e) => setDialogueIcon(e.target.value)}
+                                placeholder="图标，如 🔊（留空不画）"
+                                maxLength={4}
+                            />
+                            <input
+                                className="mix-input"
+                                value={dialogueTitle}
+                                onChange={(e) => setDialogueTitle(e.target.value)}
+                                placeholder="提示文字，如：朗读这句"
+                                maxLength={24}
+                            />
+                        </div>
+                        <div className="mix-form-note">
+                            填了图标，对局里每句「对白」后面就有这颗按钮；点击时界面收到 window.onMixDialogue({"{"} id, text, turnId {"}"})，
+                            可用 mix.mark(id, &quot;busy&quot; | &quot;playing&quot; | &quot;&quot;) 回报状态改图标。需要有界面代码才收得到。
+                        </div>
+                    </Field>
                     <MixPreviewInline
                         label="试摆一下"
                         target={{
@@ -862,6 +889,7 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                             layout: mixPanelLayoutOf({ layout: keptLayout, dock: keptDock, panelHtml }) ?? MIX_PANEL_DEFAULT_LAYOUT,
                             script,
                             connectors: connectorNames,
+                            dialogueButton,
                         }}
                         disabled={!panelHtml.trim() && !script.trim()}
                     />

@@ -23,6 +23,7 @@ import {
     type MixSlotEntry,
     type MixTicketVar,
     normalizeMixConnectorNames,
+    normalizeMixDialogueButton,
     MIX_CONNECTOR_NAME_RE,
 } from "./types";
 import {
@@ -163,6 +164,7 @@ function describeMaterial(material: MixMaterial): string {
         case "mechanism":
             field("钩子逻辑", material.script); field("界面代码", material.panelHtml);
             field("摆放", material.layout ? mixPanelLayoutSummary(material.layout) : undefined);
+            if (material.dialogueButton?.icon) field("对白按钮", `${material.dialogueButton.icon}${material.dialogueButton.title ? ` ${material.dialogueButton.title}` : ""}`);
             if (material.connectors?.length) {
                 field("需要的连接器", material.connectors.map((n) => `${n}${findMixConnector(n) ? "（用户本机已配）" : "（用户本机未配，需到酒柜「连接器」里创建）"}`).join("\n"));
             }
@@ -232,6 +234,8 @@ const CONTENT_FIELDS: FieldSpec[] = [
     { key: "layout", kinds: ["mechanism"] },
     // 界面要用的连接器名字（字符串数组）；mix.call 只放行声明过的
     { key: "connectors", kinds: ["mechanism"] },
+    // 对白按钮：{icon, title}，宿主在每句对白后画图标，点击递进界面 onMixDialogue
+    { key: "dialogueButton", kinds: ["mechanism"] },
 ];
 
 function normalizeOpenings(value: unknown): string[] | { err: string } {
@@ -321,6 +325,14 @@ function applyContentFields(target: Record<string, unknown>, kind: MixMaterialKi
                 const normalized = normalizeMixPanelLayout(args[spec.key]);
                 if (!normalized) return 'layout 必须是摆放对象，如 {"slot":"inputbar-left","icon":"🎲","autoHeight":true}。';
                 target.layout = normalized;
+                break;
+            }
+            case "dialogueButton": {
+                const raw = args[spec.key];
+                if (raw === null || raw === "" || raw === false) { delete target.dialogueButton; break; }
+                const button = normalizeMixDialogueButton(raw);
+                if (!button) return 'dialogueButton 必须是 {"icon":"🔊","title":"朗读这句"}（icon 必填，一两个 emoji 或单字）；传 null 取消。';
+                target.dialogueButton = button;
                 break;
             }
             case "connectors": {
@@ -623,7 +635,7 @@ export function mixToolListConnectors(): ToolResult {
         if (Object.keys(c.headers).length) lines.push(`　请求头：${describeConnectorHeaders(c.headers)}`);
     }
     lines.push(`可用预设：${MIX_CONNECTOR_PRESETS.map((p) => `${p.id}（${p.label}）`).join("、")}。`);
-    lines.push("官方机括「朗读」需要一个叫 tts 的连接器。");
+    lines.push("官方机括「朗读」需要一个叫 tts 的连接器：装上它，对局里每句对白后面就有 🔊，点一下念这句。");
     return { name: NAME, success: true, data: lines.join("\n") };
 }
 

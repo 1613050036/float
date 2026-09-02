@@ -3292,3 +3292,44 @@
     font-size: 12px;
     color: #ff8f8f;
 }
+
+/* ── 对白按钮：机括声明后宿主画在每句「对白」后面的小图标 ── */
+.mix-say-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: -0.2em;
+    width: 1.55em;
+    height: 1.55em;
+    margin-left: 0.3em;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    color: inherit;
+    font-size: 0.78em;
+    line-height: 1;
+    text-indent: 0;
+    cursor: pointer;
+    opacity: 0.75;
+    transition: opacity 0.2s, background 0.2s, transform 0.2s;
+}
+
+.mix-say-btn:active {
+    transform: scale(0.9);
+}
+
+.mix-say-btn[data-state="busy"] {
+    opacity: 1;
+    animation: mix-say-pulse 0.9s ease-in-out infinite;
+}
+
+.mix-say-btn[data-state="playing"] {
+    opacity: 1;
+    background: rgba(141, 123, 245, 0.35);
+    border-color: rgba(141, 123, 245, 0.6);
+}
+
+@keyframes mix-say-pulse {
+    0%, 100% { transform: scale(1); opacity: 0.55; }
+    50% { transform: scale(1.12); opacity: 1; }
+}

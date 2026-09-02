@@ -6,16 +6,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronLeft, Copy, Play, X } from "lucide-react";
-import { MixProseView } from "./prose-view";
+import { MixProseView, type MixProseDialogue } from "./prose-view";
 import { MixRichText } from "./rich-text";
 import { MixTicketFrame } from "./ticket-frame";
-import { MixMechanismPanel } from "./mechanism-panel";
+import { MixMechanismPanel, sendMixDialogue } from "./mechanism-panel";
 import { scopeMixCss } from "@/lib/mixology/css-scope";
 import { MIX_HOOK_LABELS, type MixHook } from "@/lib/mixology/mechanism-protocol";
 import { disposeMixSandboxesForMaterial, runMixHook } from "@/lib/mixology/mechanism-runtime";
 import { applyMixFilterRules } from "@/lib/mixology/prose";
 import { MIX_CRAFT_PROMPTS } from "@/lib/mixology/crafting-guides";
-import { MIX_KIND_LABELS, mixEncoreRenderHtml, type MixFilterRule, type MixMaterial, type MixMaterialKind, type MixPanelLayout, type MixState } from "@/lib/mixology/types";
+import { MIX_KIND_LABELS, mixEncoreRenderHtml, type MixDialogueButton, type MixFilterRule, type MixMaterial, type MixMaterialKind, type MixPanelLayout, type MixState } from "@/lib/mixology/types";
 
 /** 装饰预览用的样例正文：覆盖五种正文标记，方便作者一眼看全 */
 const GARNISH_SAMPLE = [
@@ -31,7 +31,7 @@ export type MixPreviewTarget =
     | { kind: "encore"; html: string; raw?: string }
     | { kind: "canvas"; html: string; cover?: string }
     | { kind: "filter"; rules: MixFilterRule[] }
-    | { kind: "mechanism"; name: string; html: string; layout: MixPanelLayout; script: string; connectors?: string[] };
+    | { kind: "mechanism"; name: string; html: string; layout: MixPanelLayout; script: string; connectors?: string[]; dialogueButton?: MixDialogueButton };
 
 /**
  * 预览内容本体：各类材料的"眼见为实"。
@@ -220,6 +220,18 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
     const [state, setState] = useState<MixState>({});
     const [box, setBox] = useState<Partial<MixPanelLayout> | null>(null);
     const [said, setSaid] = useState<string[]>([]);
+    // 对白按钮试点：声明了 dialogueButton 的机括，示例正文里每句对白后也画按钮，点了真递进界面
+    const [marks, setMarks] = useState<Record<string, string>>({});
+    const dialogue = useMemo<MixProseDialogue | undefined>(() => {
+        const button = target.dialogueButton;
+        if (!button?.icon || !target.html.trim()) return undefined;
+        return {
+            actions: [{ key: MECH_MATERIAL, icon: button.icon, title: button.title || target.name }],
+            states: marks,
+            idPrefix: "preview:",
+            onTap: (_key, segmentId, text) => sendMixDialogue(MECH_MATERIAL, { id: segmentId, text, turnId: "preview" }),
+        };
+    }, [target.dialogueButton, target.html, target.name, marks]);
     const [turn, setTurn] = useState(0);
     const [running, setRunning] = useState<MixHook | "">("");
     const [result, setResult] = useState<{ hook: MixHook; lines: string[] } | null>(null);
@@ -271,7 +283,7 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
             <div className="mix-detail-label">界面</div>
             <div className="mix-mech-stage" ref={shellRef} style={{ aspectRatio: ratio }}>
                 <div className="mix-mech-bar">{MECH_CHAR}</div>
-                <div className="mix-mech-prose"><MixProseView text={MECH_SAMPLE} /></div>
+                <div className="mix-mech-prose"><MixProseView text={MECH_SAMPLE} dialogue={dialogue} /></div>
                 <div className="mix-mech-input" />
                 <div className="mix-panel-layer">
                     {target.html.trim() ? (
@@ -287,6 +299,12 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
                             onSay={(text) => setSaid((prev) => [...prev.slice(-2), text])}
                             onBox={(_id, next) => setBox(next)}
                             connectors={target.connectors}
+                            onMark={(_id, id, state) => setMarks((prev) => {
+                                const key = `${MECH_MATERIAL}|${id}`;
+                                const next = { ...prev };
+                                if (state) next[key] = state; else delete next[key];
+                                return next;
+                            })}
                         />
                     ) : null}
                 </div>
@@ -348,7 +366,7 @@ function previewKey(target: MixPreviewTarget): string {
         case "encore": return `e${target.html}${target.raw ?? ""}`;
         case "canvas": return `c${target.html}${target.cover ?? ""}`;
         case "filter": return `f${JSON.stringify(target.rules)}`;
-        case "mechanism": return `m${target.html}${target.script}${JSON.stringify(target.layout)}${(target.connectors ?? []).join(",")}`;
+        case "mechanism": return `m${target.html}${target.script}${JSON.stringify(target.layout)}${(target.connectors ?? []).join(",")}${JSON.stringify(target.dialogueButton ?? null)}`;
     }
 }
 

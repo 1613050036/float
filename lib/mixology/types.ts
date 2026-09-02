@@ -543,7 +543,32 @@ export type MixMechanismMaterial = MixMaterialMeta & {
      * 只有在这里声明过的名字才调得动——材料拿不到没声明的接口，玩家也一眼知道它要什么。
      */
     connectors?: string[];
+    /**
+     * 对白按钮：装了这件机括的对局里，宿主在每句「对白」后面画一颗小图标，
+     * 点击把这句话递进常驻界面（window.onMixDialogue）。按钮由宿主画、样式统一，
+     * 界面只管收到之后做什么（比如请连接器合成语音）。需要有 panelHtml 才收得到。
+     */
+    dialogueButton?: MixDialogueButton;
 };
+
+export type MixDialogueButton = {
+    /** 画在按钮上的一两个 emoji 或单字 */
+    icon: string;
+    /** 长按/悬停提示，选填 */
+    title?: string;
+};
+
+/** 对白按钮的状态（界面用 mix.mark 回报）：busy 转圈、playing 高亮、空串恢复 */
+export type MixDialogueState = "busy" | "playing" | "";
+
+export function normalizeMixDialogueButton(value: unknown): MixDialogueButton | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    const icon = typeof record.icon === "string" ? record.icon.trim().slice(0, 4) : "";
+    if (!icon) return undefined;
+    const title = typeof record.title === "string" ? record.title.trim().slice(0, 24) : "";
+    return title ? { icon, title } : { icon };
+}
 
 /** 连接器名字：机括按它找连接器。只收短的标识符，免得大小写/空格对不上 */
 export const MIX_CONNECTOR_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;

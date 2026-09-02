@@ -834,6 +834,7 @@ const MIX_MATERIAL_FIELDS = {
         description: "mechanism 选填：摆放对象。slot 挂点：float（默认自由悬浮）/header/inputbar-left/inputbar-right（宿主画图标按钮点击开合面板，配 icon 一两个 emoji）/flow-top/flow-bottom（作为内嵌卡进滚动流）；x/y/w/h 为占画面的百分比，autoHeight 高度随内容",
     },
     panelHtml: { type: "string", description: "mechanism：常驻界面完整 HTML" },
+    dialogueButton: { type: "object", properties: { icon: { type: "string" }, title: { type: "string" } }, description: "mechanism 选填：对白按钮 {icon, title}。宿主在对局每句「对白」后画这颗图标，点击把这句递进界面 window.onMixDialogue({id, text, turnId})，界面可 mix.mark(id, 状态) 改图标。做「点一句念一句」这类玩法用它，需要有 panelHtml" },
     connectors: { type: "array", items: { type: "string" }, description: "mechanism 选填：界面要用的连接器名字，如 [\"tts\"]。只有声明过的名字 mix.call 才放行；连接器本身用 创建连接器 建，用户到酒柜「连接器」里填密钥" },
 };
 

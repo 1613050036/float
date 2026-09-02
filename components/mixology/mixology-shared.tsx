@@ -361,9 +361,13 @@ export function MaterialDetail({ material }: { material: MixMaterial }) {
                         layout: layout ?? MIX_PANEL_DEFAULT_LAYOUT,
                         script: material.script ?? "",
                         connectors: material.connectors,
+                        dialogueButton: material.dialogueButton,
                     }}
                     disabled={!material.panelHtml?.trim() && !material.script?.trim()}
                 />
+                {material.dialogueButton?.icon ? (
+                    <DetailField label="对白按钮" value={`${material.dialogueButton.icon}${material.dialogueButton.title ? `　${material.dialogueButton.title}` : ""}（每句对白后面一颗，点击递进界面）`} />
+                ) : null}
                 {material.connectors?.length ? (
                     <DetailField
                         label="需要的连接器"
