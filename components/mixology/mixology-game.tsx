@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ChevronLeft, Copy, History, MoreHorizontal, Pencil, Plus, RotateCcw, Send, Sun, WandSparkles, X } from "lucide-react";
 import { continueMix, editMixTurn, generateMixReply, canReplayMixFrom, MIX_REPAIR_EVENT, MIX_STORE_SNAPSHOT_TURNS, mixTurnRawText, recordMixPanelStore, refreshMixOpening, regenerateMixTail, rerollMixReply, runMixEditSync, runMixSessionEnd, truncateMixAfterTurn, type MixRepairEventDetail } from "@/lib/mixology/engine";
-import { getMixMaterial, getMixSession, isMixBuiltinId, listMixPickables, MIX_CABINET_UPDATED_EVENT, resolveMixRecipeMaterials, saveMixMaterial, saveMixSession } from "@/lib/mixology/storage";
+import { findMixConnector, getMixMaterial, getMixSession, isMixBuiltinId, listMixPickables, MIX_CABINET_UPDATED_EVENT, resolveMixRecipeMaterials, saveMixMaterial, saveMixSession } from "@/lib/mixology/storage";
 import { applyMixMacros, MIX_DEFAULT_USER_NAME } from "@/lib/mixology/assembler";
 import { buildMixConditionContext, pickActiveMixMaterials } from "@/lib/mixology/state";
 import { scopeMixCss } from "@/lib/mixology/css-scope";
@@ -293,6 +293,20 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
             })
             .filter((item): item is { material: MixMechanismMaterial; layout: MixPanelLayout } => item !== null);
     }, [session, cabinetTick]);
+
+    // 机括声明了连接器而本机没配：进局时提醒一次（同一局只提一次），
+    // 免得玩家点了半天按钮才在沙盒里看到一条报错
+    const missingWarnedRef = useRef("");
+    useEffect(() => {
+        const missing = panels.flatMap(({ material }) =>
+            (material.connectors ?? []).filter((name) => !findMixConnector(name)).map((name) => ({ material: material.name, name })));
+        if (!missing.length) return;
+        const key = missing.map((m) => `${m.material}:${m.name}`).join("|");
+        if (missingWarnedRef.current === key) return;
+        missingWarnedRef.current = key;
+        const first = missing[0];
+        onToast(`机括「${first.material}」需要连接器「${first.name}」，到酒柜的「连接器」里创建一个再来。`);
+    }, [panels, onToast]);
 
     /**
      * 按挂点分组：float 走悬浮层（老形态），header/inputbar-* 由宿主画按钮开合，
@@ -920,6 +934,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             onStore={handlePanelStore}
                             onState={handlePanelState}
                             onSay={handlePanelSay}
+                            connectors={material.connectors}
                         />
                     ))}
                 </div>
@@ -951,6 +966,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             onStore={handlePanelStore}
                             onState={handlePanelState}
                             onSay={handlePanelSay}
+                            connectors={material.connectors}
                         />
                     </div>
                 ))}
@@ -1004,6 +1020,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             onStore={handlePanelStore}
                             onState={handlePanelState}
                             onSay={handlePanelSay}
+                            connectors={material.connectors}
                         />
                     </div>
                 ))}
@@ -1027,6 +1044,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             onStore={handlePanelStore}
                             onState={handlePanelState}
                             onSay={handlePanelSay}
+                            connectors={material.connectors}
                             onBox={handlePanelBox}
                         />
                     ))}
@@ -1046,6 +1064,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             onStore={handlePanelStore}
                             onState={handlePanelState}
                             onSay={handlePanelSay}
+                            connectors={material.connectors}
                         />
                     ))}
                 </div>

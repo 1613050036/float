@@ -1,11 +1,11 @@
 // lib/mixology/builtin.ts
-// 独家特调 · 官方出厂材料：序言/基底/杯型的默认文案。
+// 独家特调 · 官方出厂材料：序言/基底/杯型的默认文案，以及一件示范机括「朗读」。
 // 这几件是"素杯也好喝"的底线——玩家一件配料不装、只拿一张角色卡也能开局。
 // 文案升级时 bump MIX_BUILTIN_VERSION，storage 会用出厂内容刷新官方件。
 
-import type { MixTextMaterial } from "./types";
+import type { MixMechanismMaterial, MixTextMaterial } from "./types";
 
-export const MIX_BUILTIN_VERSION = 3;
+export const MIX_BUILTIN_VERSION = 4;
 
 export const MIX_BUILTIN_PREFACE_ID = "mix_builtin_preface";
 export const MIX_BUILTIN_BASE_ID = "mix_builtin_base";
@@ -68,6 +68,85 @@ export function createBuiltinGlass(): MixTextMaterial {
             "- 每轮在留有余韵处收笔，给{{user}}接话的空间；不要替{{user}}总结感受。",
         ].join("\n"),
         tags: ["官方"],
+        createdAt: now(),
+        updatedAt: now(),
+    };
+}
+
+export const MIX_BUILTIN_READER_ID = "mix_builtin_reader";
+
+/**
+ * 官方机括「朗读」：连接器（mix.call）的样板。
+ * 钩子把每轮正文记进 store，界面在正文尾部放一颗播放按钮——点了才合成，不点不花钱。
+ * 需要玩家在酒柜「连接器」里用「MiniMax 语音」预设建一个叫 tts 的连接器。
+ */
+export function createBuiltinReader(): MixMechanismMaterial {
+    return {
+        id: MIX_BUILTIN_READER_ID,
+        kind: "mechanism",
+        name: "官方 · 朗读",
+        hook: "点一下把最新回复念出来，走你自己的 MiniMax 连接器",
+        author: "独家特调",
+        tags: ["官方", "语音", "连接器"],
+        connectors: ["tts"],
+        layout: { x: 0, y: 0, w: 100, h: 16, slot: "flow-bottom", autoHeight: true, plate: false, chrome: "none" },
+        script: [
+            "// 每轮正文记进存储，界面按它合成。去掉状态栏/小剧场壳和正文标记，只留能念的字。",
+            "function onAfterReply(ctx) {",
+            "  var text = String(ctx.text || '')",
+            "    .replace(/\\[状态栏[^\\]]*\\][\\s\\S]*?\\[\\/状态栏\\]/g, '')",
+            "    .replace(/\\[小剧场[^\\]]*\\][\\s\\S]*?\\[\\/小剧场\\]/g, '')",
+            "    .replace(/[*~]/g, '')",
+            "    .replace(/\\n{2,}/g, '\\n')",
+            "    .trim();",
+            "  return { store: { 最近回复: text.slice(0, 2000) } };",
+            "}",
+        ].join("\n"),
+        panelHtml: [
+            "<style>",
+            "  .r{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:999px;background:rgba(141,123,245,.14);border:1px solid rgba(141,123,245,.28);color:#e9e5ff;font-size:12px}",
+            "  .r button{border:0;border-radius:999px;padding:6px 14px;font-weight:700;font-size:12px;cursor:pointer;background:#8d7bf5;color:#fff}",
+            "  .r button[disabled]{opacity:.45;cursor:default}",
+            "  .r .s{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.8}",
+            "</style>",
+            "<div class=\"r\"><button id=\"b\">▶ 朗读</button><span class=\"s\" id=\"s\">合成最新一轮回复，点了才合成</span></div>",
+            "<script>",
+            "(function(){",
+            "  var b=document.getElementById('b'), s=document.getElementById('s');",
+            "  var audio=null, cacheText='', cacheUrl='', playing=false;",
+            "  function latest(){ return String((window.MIX_STORE||{}).最近回复||'').trim(); }",
+            "  function say(t){ s.textContent=t; }",
+            "  function hexToBlob(hex){",
+            "    var n=hex.length>>1, bytes=new Uint8Array(n);",
+            "    for(var i=0;i<n;i++) bytes[i]=parseInt(hex.substr(i*2,2),16);",
+            "    return new Blob([bytes],{type:'audio/mpeg'});",
+            "  }",
+            "  function stop(){ if(audio){ audio.pause(); audio=null; } playing=false; b.textContent='▶ 朗读'; }",
+            "  function play(url){",
+            "    stop(); audio=new Audio(url); playing=true; b.textContent='■ 停止'; say('播放中…');",
+            "    audio.onended=function(){ stop(); say('播完了，再点一次可重听（不重复合成）'); };",
+            "    audio.onerror=function(){ stop(); say('播放失败'); };",
+            "    audio.play().catch(function(){ stop(); say('浏览器拦住了自动播放，再点一次'); });",
+            "  }",
+            "  b.onclick=function(){",
+            "    if(playing){ stop(); say('已停止'); return; }",
+            "    var text=latest();",
+            "    if(!text){ say('还没有可念的回复'); return; }",
+            "    if(text===cacheText && cacheUrl){ play(cacheUrl); return; }",
+            "    b.disabled=true; say('合成中…');",
+            "    window.mix.call('tts',{ text:text }).then(function(r){",
+            "      var d=r.data||{};",
+            "      var hex=d.data&&d.data.audio;",
+            "      if(!hex){ var m=(d.base_resp&&d.base_resp.status_msg)||('接口返回 '+r.status); say('合成失败：'+m); return; }",
+            "      if(cacheUrl) URL.revokeObjectURL(cacheUrl);",
+            "      cacheText=text; cacheUrl=URL.createObjectURL(hexToBlob(hex));",
+            "      play(cacheUrl);",
+            "    }).catch(function(e){ say(e.missing?'先到酒柜「连接器」里建一个叫 tts 的连接器':('失败：'+e.message)); }).then(function(){ b.disabled=false; });",
+            "  };",
+            "  window.onMixSync=function(){ if(!playing) say(latest()?'合成最新一轮回复，点了才合成':'还没有可念的回复'); };",
+            "})();",
+            "</script>",
+        ].join("\n"),
         createdAt: now(),
         updatedAt: now(),
     };

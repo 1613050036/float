@@ -3207,3 +3207,88 @@
     background: rgba(217, 176, 106, 0.18);
     color: var(--mix-gold);
 }
+
+/* ── 连接器（酒柜页头部的弹层） ── */
+.mix-conn-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.mix-conn-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--mix-line);
+    border-radius: 14px;
+    padding: 10px 8px 10px 12px;
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    cursor: pointer;
+}
+
+.mix-conn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    background: rgba(141, 123, 245, 0.18);
+    color: var(--mix-violet);
+    flex: 0 0 auto;
+}
+
+.mix-conn-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.mix-conn-name {
+    font-size: 13px;
+    font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.mix-conn-sub {
+    font-size: 11px;
+    color: var(--mix-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mix-conn-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.mix-conn-two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.mix-conn-field {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.mix-conn-field .mix-form-label {
+    margin-left: 2px;
+}
+
+.mix-form-error {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #ff8f8f;
+}

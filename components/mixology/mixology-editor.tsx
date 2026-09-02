@@ -15,7 +15,7 @@ import type {
     MixTextMaterial,
     MixTicketVar,
 } from "@/lib/mixology/types";
-import { createMixId, formatMixTags, MIX_KIND_LABELS, MIX_PANEL_DEFAULT_LAYOUT, MIX_SECTION_TITLE_DEFAULTS, MIX_TAG_MAX, mixPanelLayoutOf, parseMixTags, type MixSectionTitleKey } from "@/lib/mixology/types";
+import { createMixId, formatMixTags, MIX_KIND_LABELS, MIX_PANEL_DEFAULT_LAYOUT, MIX_SECTION_TITLE_DEFAULTS, MIX_TAG_MAX, mixPanelLayoutOf, normalizeMixConnectorNames, parseMixTags, type MixSectionTitleKey } from "@/lib/mixology/types";
 import { applyMixFilterRules } from "@/lib/mixology/prose";
 import {
     buildMixCardFreeformText,
@@ -210,6 +210,9 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
     const keptLayout = initial?.kind === "mechanism" ? initial.layout : undefined;
     const keptDock = initial?.kind === "mechanism" ? initial.dock : undefined;
     const [panelHtml, setPanelHtml] = useState(initial?.kind === "mechanism" ? initial.panelHtml ?? "" : "");
+    // 界面要用的连接器名字（逗号隔开）；只有声明过的名字 mix.call 才放行
+    const [connectorsText, setConnectorsText] = useState(initial?.kind === "mechanism" ? (initial.connectors ?? []).join(", ") : "");
+    const connectorNames = useMemo(() => normalizeMixConnectorNames(connectorsText), [connectorsText]);
 
     /**
      * 从契约正文里认出「字段名：说明」这样的行，做成一排可点的候选。
@@ -395,6 +398,7 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                 layout: keptLayout,
                 dock: keptDock,
                 panelHtml: panelHtml.trim() || undefined,
+                connectors: connectorNames.length ? connectorNames : undefined,
             });
             return;
         }
@@ -833,8 +837,21 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                             style={{ minHeight: 160 }}
                             value={panelHtml}
                             onChange={(e) => setPanelHtml(e.target.value)}
-                            placeholder={"<div style=\"padding:10px\">这里是常驻面板</div>\n\nwindow.mix\n  move(x, y) / size(w, h)         挪自己、改大小（占对局画面的百分比）\n  design(px)                      按多宽排版，画完整体缩放到面板大小；0 = 跟着面板走\n  fit(px)                         报内容多高\n  chrome(on) / plate(on)          要不要应用画的标题条 / 底板，默认都不画\n  drag(on) / resize(on)           玩家能不能拖、能不能缩放\n  z(n)                            叠放次序 0–9\n  grab()                          在自己画的标题条上 pointerdown 时调，接着由应用接管拖动\n  setStore(obj) / setState(obj)   写存储 / 写记住的值\n  say(text)                       以玩家身份说一句\nwindow.MIX_STATE / window.MIX_STORE  当前的值\nwindow.onMixSync(state, store)       值变了会回调"}
+                            placeholder={"<div style=\"padding:10px\">这里是常驻面板</div>\n\nwindow.mix\n  move(x, y) / size(w, h)         挪自己、改大小（占对局画面的百分比）\n  design(px)                      按多宽排版，画完整体缩放到面板大小；0 = 跟着面板走\n  fit(px)                         报内容多高\n  chrome(on) / plate(on)          要不要应用画的标题条 / 底板，默认都不画\n  drag(on) / resize(on)           玩家能不能拖、能不能缩放\n  z(n)                            叠放次序 0–9\n  grab()                          在自己画的标题条上 pointerdown 时调，接着由应用接管拖动\n  setStore(obj) / setState(obj)   写存储 / 写记住的值\n  say(text)                       以玩家身份说一句\n  call(name, params)              请宿主代调玩家配的连接器，返回 Promise<{status, data}>\nwindow.MIX_STATE / window.MIX_STORE  当前的值\nwindow.onMixSync(state, store)       值变了会回调"}
                         />
+                    </Field>
+                    <Field label="需要的连接器" hint="选填，逗号隔开">
+                        <input
+                            className="mix-input"
+                            value={connectorsText}
+                            onChange={(e) => setConnectorsText(e.target.value)}
+                            placeholder={'例：tts。界面里 mix.call("tts", { text }) 会请宿主代调玩家配好的同名连接器'}
+                            spellCheck={false}
+                        />
+                        <div className="mix-form-note">
+                            连接器是玩家自己在酒柜里配的外部接口（地址和密钥只留在玩家本机），材料只声明名字。
+                            名字用小写字母、数字、-、_。{connectorNames.length ? `将声明：${connectorNames.join("、")}` : ""}
+                        </div>
                     </Field>
                     <MixPreviewInline
                         label="试摆一下"
@@ -844,11 +861,12 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                             html: panelHtml,
                             layout: mixPanelLayoutOf({ layout: keptLayout, dock: keptDock, panelHtml }) ?? MIX_PANEL_DEFAULT_LAYOUT,
                             script,
+                            connectors: connectorNames,
                         }}
                         disabled={!panelHtml.trim() && !script.trim()}
                     />
                     <div className="mix-struct-note" style={{ marginTop: 10 }}>
-                        沙盒里没有网络，跑太久会被掐断。存储一个对局一份，退出再进来还在。
+                        沙盒里没有网络，跑太久会被掐断。存储一个对局一份，退出再进来还在。要调外部接口只能走连接器（mix.call）。
                     </div>
                 </>
             ) : null}

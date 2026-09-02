@@ -537,6 +537,56 @@ export type MixMechanismMaterial = MixMaterialMeta & {
     layout?: MixPanelLayout;
     /** 常驻界面的 HTML（含 CSS/JS），在沙盒 iframe 里跑 */
     panelHtml?: string;
+    /**
+     * 界面要用的连接器名字（如 ["tts"]）。连接器是玩家自己在酒柜里配的外部接口
+     * （地址与密钥只留在本机），界面通过 mix.call(名字, 参数) 请宿主代调。
+     * 只有在这里声明过的名字才调得动——材料拿不到没声明的接口，玩家也一眼知道它要什么。
+     */
+    connectors?: string[];
+};
+
+/** 连接器名字：机括按它找连接器。只收短的标识符，免得大小写/空格对不上 */
+export const MIX_CONNECTOR_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+export const MIX_CONNECTOR_MAX = 20;
+
+/** 规整一份连接器名单：去空、去重、只留合法名字 */
+export function normalizeMixConnectorNames(value: unknown): string[] {
+    const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[,，、\s]+/) : [];
+    const out: string[] = [];
+    for (const item of raw) {
+        const name = String(item ?? "").trim().toLowerCase();
+        if (!MIX_CONNECTOR_NAME_RE.test(name) || out.includes(name)) continue;
+        out.push(name);
+        if (out.length >= MIX_CONNECTOR_MAX) break;
+    }
+    return out;
+}
+
+/** 连接器的响应怎么交给机括：json 解析成对象；text 原样字符串；blob 转成 data: URL（音频/图片） */
+export type MixConnectorResponse = "json" | "text" | "blob";
+
+/**
+ * 连接器：玩家自己配的一个外部接口。地址、请求头（密钥在这里）、请求体模板都是玩家的，
+ * 材料只知道名字。mix.call 传来的参数替换模板里的 {{参数名}}（可写默认值 {{参数名|默认}}），
+ * 宿主代为发请求，把响应交回沙盒。不随材料导出、不上大厅，永远只留在本机。
+ */
+export type MixConnector = {
+    id: string;
+    /** 机括按这个名字找它，满足 MIX_CONNECTOR_NAME_RE */
+    name: string;
+    /** 给自己看的说明（选填） */
+    note?: string;
+    url: string;
+    method: "POST" | "GET";
+    /** 请求头；值里同样可用 {{参数名}} */
+    headers: Record<string, string>;
+    /** 请求体模板；GET 忽略。模板本身是 JSON 时，替换进去的字符串会自动转义 */
+    body: string;
+    response: MixConnectorResponse;
+    /** 由哪个预设生成（仅展示用） */
+    preset?: string;
+    createdAt: number;
+    updatedAt: number;
 };
 
 export type MixMaterial =

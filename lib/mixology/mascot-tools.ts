@@ -22,6 +22,7 @@ import {
     type MixMaterialKind,
     type MixSlotEntry,
     type MixTicketVar,
+    normalizeMixConnectorNames,
 } from "./types";
 import {
     MIX_CABINET_UPDATED_EVENT,
@@ -32,6 +33,7 @@ import {
     loadMixRecipes,
     saveMixMaterial,
     saveMixRecipe,
+    findMixConnector,
 } from "./storage";
 
 import { buildMixCraftSpec } from "./crafting-guides";
@@ -156,6 +158,9 @@ function describeMaterial(material: MixMaterial): string {
         case "mechanism":
             field("钩子逻辑", material.script); field("界面代码", material.panelHtml);
             field("摆放", material.layout ? mixPanelLayoutSummary(material.layout) : undefined);
+            if (material.connectors?.length) {
+                field("需要的连接器", material.connectors.map((n) => `${n}${findMixConnector(n) ? "（用户本机已配）" : "（用户本机未配，需到酒柜「连接器」里创建）"}`).join("\n"));
+            }
             break;
         default:
             field(`${MIX_KIND_LABELS[material.kind]}内容`, (material as { content?: string }).content);
@@ -220,6 +225,8 @@ const CONTENT_FIELDS: FieldSpec[] = [
     { key: "script", kinds: ["mechanism"] },
     { key: "panelHtml", kinds: ["mechanism"] },
     { key: "layout", kinds: ["mechanism"] },
+    // 界面要用的连接器名字（字符串数组）；mix.call 只放行声明过的
+    { key: "connectors", kinds: ["mechanism"] },
 ];
 
 function normalizeOpenings(value: unknown): string[] | { err: string } {
@@ -309,6 +316,15 @@ function applyContentFields(target: Record<string, unknown>, kind: MixMaterialKi
                 const normalized = normalizeMixPanelLayout(args[spec.key]);
                 if (!normalized) return 'layout 必须是摆放对象，如 {"slot":"inputbar-left","icon":"🎲","autoHeight":true}。';
                 target.layout = normalized;
+                break;
+            }
+            case "connectors": {
+                const names = normalizeMixConnectorNames(args[spec.key]);
+                if (Array.isArray(args[spec.key]) && (args[spec.key] as unknown[]).length && !names.length) {
+                    return "connectors 必须是名字数组，名字只能用小写字母、数字、-、_（如 [\"tts\"]）。";
+                }
+                if (names.length) target.connectors = names;
+                else delete target.connectors;
                 break;
             }
             case "historyFeed": {

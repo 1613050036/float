@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { MixCharacterCard, MixMaterial, MixMaterialKind } from "@/lib/mixology/types";
 import { isMixCardFreeform } from "@/lib/mixology/card-freeform";
+import { findMixConnector } from "@/lib/mixology/storage";
 import { MIX_KIND_LABELS, MIX_PANEL_DEFAULT_LAYOUT, mixEncoreRenderHtml, mixKindHasCover, mixKindRunsActiveCode, mixPanelLayoutOf, mixPanelLayoutSummary, normalizeMixTags } from "@/lib/mixology/types";
 import { applyMixMacros, MIX_DEFAULT_USER_NAME } from "@/lib/mixology/assembler";
 import { MixPreviewInline } from "./mixology-preview";
@@ -359,9 +360,16 @@ export function MaterialDetail({ material }: { material: MixMaterial }) {
                         html: material.panelHtml ?? "",
                         layout: layout ?? MIX_PANEL_DEFAULT_LAYOUT,
                         script: material.script ?? "",
+                        connectors: material.connectors,
                     }}
                     disabled={!material.panelHtml?.trim() && !material.script?.trim()}
                 />
+                {material.connectors?.length ? (
+                    <DetailField
+                        label="需要的连接器"
+                        value={material.connectors.map((name) => `${name}${findMixConnector(name) ? "（本机已配）" : "（本机未配，到酒柜的「连接器」里创建）"}`).join("\n")}
+                    />
+                ) : null}
                 <DetailField label="钩子逻辑" value={material.script} code />
                 {layout ? <DetailField label="界面摆放" value={mixPanelLayoutSummary(layout)} /> : null}
                 <DetailField label="界面代码" value={material.panelHtml} code />

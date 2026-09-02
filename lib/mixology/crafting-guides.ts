@@ -242,6 +242,7 @@ ctx 字段：turnCount 已发生轮数；state 记住的值；store 本机括自
 限制：单次执行 2 秒超时；无网络、碰不到页面。存储不设上限，但它随对局整份读写，写太大轮轮都要序列化，自己节制。
 
 ② 常驻界面（完整 HTML，可选）：跑在沙盒 iframe 里。用 window.MIX_STATE / window.MIX_STORE 读数据，定义 window.onMixSync(state, store) 接收更新；通过 window.mix 请求动作：setStore(obj)、setState(obj)、say(text) 以玩家身份发言、move(x,y) 与 size(w,h)（占对局画面的百分比）、fit(px) 报内容高度、design(px) 设排版基准宽度、drag(bool)/resize(bool)/chrome(bool)/plate(bool)、z(n)、grab() 在自绘标题条上起拖。界面初始无外壳无底板，位置与尺寸请在代码里用 mix.move / mix.size 自己定好。除自由悬浮外还有五个挂点（材料的 layout.slot 字段声明，代码里不可改）："header"/"inputbar-left"/"inputbar-right" 三个按钮位——宿主在标题栏或输入栏画一颗图标按钮（图标由 layout.icon 给一两个 emoji），点击开合面板，面板宽度铺满、高度随内容，适合骰子/道具/快捷指令这类召之即来的工具；"flow-top"/"flow-bottom" 两个流内位——面板作为内嵌卡进滚动流（画布之下/最新一轮之下），随内容滚动，适合任务看板、选择器这类跟着剧情走的界面。非悬浮挂点下 move/size/drag/resize/chrome 无效，fit/design/plate 照常；按钮位面板关闭时会被卸载，要留住的状态写进 store。界面里可用的数据只有 MIX_STATE 与 MIX_STORE 两个对象——没有角色名、玩家名这类现成变量，需要就让钩子写进 store 再读；写完自查一遍：用到的每个变量都必须已声明。
+沙盒里没有网络。要调外部接口（语音合成、生图等）只能走连接器：连接器是玩家自己在酒柜里配的接口（地址、密钥、请求体模板都在玩家本机，材料碰不到），材料只在 connectors 字段里声明要用的名字（如 ["tts"]），界面里 mix.call("tts", { text: "…" }) 请宿主代调，返回 Promise，成功 resolve { status, data }（data 按玩家连接器的响应类型：JSON 对象 / 字符串 / 二进制转成的 data: URL），失败 reject（没声明、玩家没配、每分钟超过 30 次、网络错）。参数只能是扁平的字符串/数字/布尔。只在玩家点击后才调用，不要在同步回调或定时器里自动刷接口——那是在烧玩家的额度。以 MiniMax 语音为例：玩家用「MiniMax 语音」预设建一个叫 tts 的连接器后，mix.call("tts", { text }) 的 data.data.audio 是十六进制的 mp3，界面里按两位一字节解成 Uint8Array → Blob → URL.createObjectURL 交给 <audio> 播。
 - 美学要求：形态跟着玩法走——一颗胶囊、一条窄边栏、一枚角标、一张卡片，或一块整面的仪表盘都可以。原则只有三条：默认别挡住对话（大面板要能收起或退场）；气质贴合对局，把它当世界里的道具来做（罗盘、签筒、终端、账本），不要做成工程感的调试面板；动效轻、不抢注意力。配色与深色界面协调。
 
 请分段输出：
@@ -249,10 +250,11 @@ ctx 字段：turnCount 已发生轮数；state 记住的值；store 本机括自
 【一句话介绍】一行说清它是什么玩法
 【标签】2~6 个短词，用顿号隔开
 【玩法方案】一两句话：这件机括怎么玩，钩子和界面各负责什么
+【需要的连接器】用到外部接口才写，逗号隔开的名字（如 tts）并说明玩家该配什么接口、mix.call 传什么参数；不需要则写"无"
 【钩子逻辑】（不需要则写"无"）
 【界面代码】完整 HTML（不需要则写"无"）
 
-（若我在想法里注明「要 JSON」，请改为只输出（从 { 开始、到 } 结束，不要用 \`\`\` 代码块包裹、前后不加任何文字；字符串值内不允许出现真实换行或制表符（会直接导致导入失败），所有换行一律写成 \\n，长代码字段尤其要逐行检查；请用分行缩进的格式输出整个 JSON（不要压成一行，压成一行极易漏括号）；代码或正则里的一个反斜杠在 JSON 里写成两个，不要再多转一层）：{"kind":"mechanism","name":"材料名","hook":"…","tags":["…"],"script":"…","panelHtml":"…"}，纯 JSON、字符串内换行写成 \\n。）
+（若我在想法里注明「要 JSON」，请改为只输出（从 { 开始、到 } 结束，不要用 \`\`\` 代码块包裹、前后不加任何文字；字符串值内不允许出现真实换行或制表符（会直接导致导入失败），所有换行一律写成 \\n，长代码字段尤其要逐行检查；请用分行缩进的格式输出整个 JSON（不要压成一行，压成一行极易漏括号）；代码或正则里的一个反斜杠在 JSON 里写成两个，不要再多转一层）：{"kind":"mechanism","name":"材料名","hook":"…","tags":["…"],"connectors":["tts"],"script":"…","panelHtml":"…"}（不用外部接口就不写 connectors），纯 JSON、字符串内换行写成 \\n。）
 
 【我的想法】：（想实现什么玩法，例如骰子面板、好感度进度条、随机事件抽卡）`,
 };
@@ -309,7 +311,8 @@ rules＝数组 [{"find":"正则本体（不带斜杠定界符）","replace":"替
 name＝材料名；hook＝一句话介绍；tags＝字符串数组；script＝钩子逻辑纯 JS（可不传）；
 panelHtml＝常驻界面完整 HTML（可不传）；script 与 panelHtml 至少传一个；
 layout＝摆放对象（选填）：{"slot":"float|header|inputbar-left|inputbar-right|flow-top|flow-bottom","icon":"🎲","x":3,"y":62,"w":94,"h":20,"autoHeight":true,…}——slot 不写为自由悬浮；按钮位（header/inputbar-*）配 icon 一两个 emoji，宿主画按钮点击开合；流内位（flow-top/flow-bottom）嵌进滚动流随内容滚动。
-图片细则：机括沙盒完全断网（CSP default-src 'none'），任何外链（含图床 URL）都加载不了，界面素材只能内联。`,
+connectors＝字符串数组（选填，如 ["tts"]）：界面要用的连接器名字，只有声明过的名字 mix.call 才放行；连接器本身由用户在酒柜「连接器」里配（地址与密钥留在用户本机），你只声明名字并在界面里 mix.call(名字, 参数) 调用。
+图片细则：机括沙盒完全断网（CSP default-src 'none'），任何外链（含图床 URL）都加载不了，界面素材只能内联；调外部接口唯一的口子是连接器。`,
 };
 
 /**

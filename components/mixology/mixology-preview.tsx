@@ -31,7 +31,7 @@ export type MixPreviewTarget =
     | { kind: "encore"; html: string; raw?: string }
     | { kind: "canvas"; html: string; cover?: string }
     | { kind: "filter"; rules: MixFilterRule[] }
-    | { kind: "mechanism"; name: string; html: string; layout: MixPanelLayout; script: string };
+    | { kind: "mechanism"; name: string; html: string; layout: MixPanelLayout; script: string; connectors?: string[] };
 
 /**
  * 预览内容本体：各类材料的"眼见为实"。
@@ -286,6 +286,7 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
                             onState={(patch) => setState((prev) => ({ ...prev, ...patch }))}
                             onSay={(text) => setSaid((prev) => [...prev.slice(-2), text])}
                             onBox={(_id, next) => setBox(next)}
+                            connectors={target.connectors}
                         />
                     ) : null}
                 </div>
@@ -347,7 +348,7 @@ function previewKey(target: MixPreviewTarget): string {
         case "encore": return `e${target.html}${target.raw ?? ""}`;
         case "canvas": return `c${target.html}${target.cover ?? ""}`;
         case "filter": return `f${JSON.stringify(target.rules)}`;
-        case "mechanism": return `m${target.html}${target.script}${JSON.stringify(target.layout)}`;
+        case "mechanism": return `m${target.html}${target.script}${JSON.stringify(target.layout)}${(target.connectors ?? []).join(",")}`;
     }
 }
 

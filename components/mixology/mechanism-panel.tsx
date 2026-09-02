@@ -11,7 +11,8 @@
 // 层级不许压过应用自己的弹窗。除此之外不干涉排版。
 //
 // 能做的事仍是一张白名单：写自己的存储、写记住的值、以玩家身份发一句话、
-// 收起/展开、挪自己、改自己大小、报一下内容多高。白名单以外的消息一律不理会。
+// 收起/展开、挪自己、改自己大小、报一下内容多高，以及请宿主代调一个玩家配好的
+// 连接器（mix.call，见 lib/mixology/connectors）。白名单以外的消息一律不理会。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -25,6 +26,8 @@ import {
     type MixState,
 } from "@/lib/mixology/types";
 import { normalizeMechanismStore, type MixMechanismStore } from "@/lib/mixology/mechanism-protocol";
+import { normalizeMixConnectorParams, runMixConnector, takeMixConnectorQuota } from "@/lib/mixology/connectors";
+import { findMixConnector } from "@/lib/mixology/storage";
 
 /** 界面能请求的动作，就这几条 */
 type PanelCommand =
@@ -40,9 +43,39 @@ type PanelCommand =
     | { name: "flag"; key: unknown; on: unknown }
     | { name: "grab"; cx: unknown; cy: unknown }
     | { name: "drag"; cx: unknown; cy: unknown }
-    | { name: "dragEnd" };
+    | { name: "dragEnd" }
+    | { name: "call"; id: unknown; connector: unknown; params: unknown };
 
 const MAX_SAY_LENGTH = 2_000;
+
+/**
+ * 界面请宿主代调一个连接器（mix.call）。沙盒自己发不了请求，这里是唯一的出口：
+ * 名字必须在材料里声明过、玩家本机得配了同名连接器、每分钟有次数上限。
+ * 结果按 id 递回沙盒，界面那头的 Promise 才能落定。
+ */
+async function handleConnectorCall(
+    command: { id: unknown; connector: unknown; params: unknown },
+    materialId: string,
+    declared: string[] | undefined,
+    post: (payload: Record<string, unknown>) => void,
+): Promise<void> {
+    const id = Number(command.id);
+    if (!Number.isFinite(id)) return;
+    const reply = (payload: Record<string, unknown>) => post({ type: "call-result", callId: id, ...payload });
+    const name = String(command.connector ?? "").trim().toLowerCase();
+    if (!name) { reply({ ok: false, error: "mix.call 需要连接器名字。" }); return; }
+    if (!declared?.includes(name)) {
+        reply({ ok: false, error: `这件机括没有声明连接器「${name}」（材料的「需要的连接器」里没写它）。` });
+        return;
+    }
+    const connector = findMixConnector(name);
+    if (!connector) { reply({ ok: false, error: `本机还没有叫「${name}」的连接器，到酒柜的「连接器」里创建一个。`, missing: true }); return; }
+    const normalized = normalizeMixConnectorParams(command.params);
+    if ("err" in normalized) { reply({ ok: false, error: normalized.err }); return; }
+    if (!takeMixConnectorQuota(materialId)) { reply({ ok: false, error: "调用太频繁：每件机括每分钟最多 30 次。" }); return; }
+    const result = await runMixConnector(connector, normalized.params);
+    reply(result.ok ? { ok: true, status: result.status, data: result.data } : { ok: false, error: result.error });
+}
 
 type Box = { x: number; y: number; w: number; h: number };
 
@@ -104,8 +137,19 @@ export function buildPanelDoc(html: string, state: MixState, store: MixMechanism
     plate: function(on){ send("flag", { key: "plate", on: on !== false }); },
     z: function(n){ send("flag", { key: "z", on: n }); },
     // 从界面内部起拖：在自己画的标题条上 pointerdown 时调一下
-    grab: startDrag
+    grab: startDrag,
+    // 请宿主代调一个连接器（玩家在酒柜里配的外部接口，材料要在「需要的连接器」里声明名字）。
+    // 返回 Promise：成功 resolve { status, data }（data 按连接器的响应类型：对象 / 字符串 / data: URL），
+    // 失败 reject Error（没声明、没配、限流、网络错）。
+    call: function(name, params){
+      return new Promise(function(resolve, reject){
+        var id = ++callSeq;
+        calls[id] = { resolve: resolve, reject: reject };
+        send("call", { id: id, connector: String(name == null ? "" : name), params: params || {} });
+      });
+    }
   };
+  var callSeq = 0, calls = {};
 
   // 界面内部起拖：手指按在 iframe 里时，这一串移动事件会被锁在 iframe 上，
   // 宿主那边一条都收不到，所以这里自己听一份报上去。
@@ -154,6 +198,14 @@ export function buildPanelDoc(html: string, state: MixState, store: MixMechanism
   window.addEventListener("message", function(event){
     var data = event.data;
     if (!data || data.source !== "mix-panel-host") return;
+    if (data.type === "call-result") {
+      var pending = calls[data.callId];
+      if (!pending) return;
+      delete calls[data.callId];
+      if (data.ok) pending.resolve({ status: data.status, data: data.data });
+      else { var err = new Error(data.error || "连接器调用失败"); err.missing = !!data.missing; pending.reject(err); }
+      return;
+    }
     window.MIX_STATE = data.state || {};
     window.MIX_STORE = data.store || {};
     if (typeof window.onMixSync === "function") {
@@ -212,6 +264,7 @@ export function MixMechanismPanel({
     onState,
     onSay,
     onBox,
+    connectors,
 }: {
     materialId: string;
     name: string;
@@ -224,6 +277,8 @@ export function MixMechanismPanel({
     onSay: (text: string) => void;
     /** 玩家拖动/缩放之后落库，只影响这一局 */
     onBox: (materialId: string, box: Box) => void;
+    /** 材料声明要用的连接器名字；mix.call 只放行这些 */
+    connectors?: string[];
 }) {
     const frameRef = useRef<HTMLIFrameElement | null>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -502,6 +557,9 @@ export function MixMechanismPanel({
                         return current;
                     });
                     break;
+                case "call":
+                    void handleConnectorCall(command, materialId, connectors, post);
+                    break;
                 default:
                     // 白名单以外一律不理会
                     break;
@@ -509,7 +567,7 @@ export function MixMechanismPanel({
         };
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [materialId, onStore, onState, onSay, onBox, canDrag, applyBox, scale, post]);
+    }, [materialId, onStore, onState, onSay, onBox, canDrag, applyBox, scale, post, connectors]);
 
     const style: React.CSSProperties = {
         left: `${box.x}%`,
@@ -624,6 +682,7 @@ export function MixMechanismInline({
     onStore,
     onState,
     onSay,
+    connectors,
 }: {
     materialId: string;
     name: string;
@@ -635,6 +694,8 @@ export function MixMechanismInline({
     onStore: (materialId: string, store: MixMechanismStore) => void;
     onState: (state: MixState) => void;
     onSay: (text: string) => void;
+    /** 材料声明要用的连接器名字；mix.call 只放行这些 */
+    connectors?: string[];
 }) {
     const frameRef = useRef<HTMLIFrameElement | null>(null);
     const stageRef = useRef<HTMLDivElement | null>(null);
@@ -731,6 +792,9 @@ export function MixMechanismInline({
                     setPlateFlag(command.on !== false);
                     break;
                 }
+                case "call":
+                    void handleConnectorCall(command, materialId, connectors, post);
+                    break;
                 default:
                     // 位置类命令（box/grab/drag/setOpen…）在内嵌形态下没有意义，一律不理会
                     break;
@@ -738,7 +802,7 @@ export function MixMechanismInline({
         };
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [materialId, onStore, onState, onSay, post]);
+    }, [materialId, onStore, onState, onSay, post, connectors]);
 
     const designWidth = designPx === null ? 0 : designPx;
     const scale = designWidth && width > 0 ? width / designWidth : 1;
