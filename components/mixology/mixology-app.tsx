@@ -963,6 +963,37 @@ export function MixologyApp({ onClose }: { onClose: () => void }) {
                                     </button>
                                 </>
                             ) : null}
+                            {/* 官方件不可改：想改就复制一份自建的——进酒柜、直接打开编辑器 */}
+                            {isMixBuiltinId(detail.id) ? (
+                                <button
+                                    type="button"
+                                    className="mix-icon-btn"
+                                    onClick={() => {
+                                        const now = Date.now();
+                                        const copy = {
+                                            ...detail,
+                                            id: createMixId("mixmat"),
+                                            name: `${detail.name.replace(/^官方\s*·\s*/, "")} 副本`,
+                                            author: undefined,
+                                            tags: (detail.tags ?? []).filter((t) => t !== "官方"),
+                                            publishedId: undefined,
+                                            publishedAt: undefined,
+                                            imported: undefined,
+                                            createdAt: now,
+                                            updatedAt: now,
+                                        } as MixMaterial;
+                                        saveMixMaterial(copy);
+                                        refresh();
+                                        setDetail(null);
+                                        setEditor({ kind: copy.kind, initial: copy });
+                                        showToast(`已复制为自建材料「${copy.name}」，可以随意改了。`);
+                                    }}
+                                    aria-label="复制为自建"
+                                    title="复制为自建：得到一份可编辑的副本"
+                                >
+                                    <Copy size={16} />
+                                </button>
+                            ) : null}
                             {!isMixBuiltinId(detail.id) && !detail.imported ? (
                                 <>
                                     <button
