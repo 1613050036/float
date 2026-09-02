@@ -427,9 +427,9 @@ export function MixPreviewInline({
 const STRUCTURE_ROWS: { section: string; from: string; kind?: string }[] = [
     { section: "（开场说明）", from: "序言材料（一局一件），声明这是角色扮演、越靠后优先级越高；没配则没有这一段（官方出厂件在槽位候选里可选）", kind: "preface" },
     { section: "# 扮演总纲", from: "基底（叠多件时每件一个 ##，标题取材料名）", kind: "base" },
-    { section: "# 角色资料", from: "角色卡，每个框一个 ##：角色名 / 基础信息 / 性格 / 外貌 / 背景", kind: "character" },
+    { section: "# 角色资料", from: "角色卡。分框填写时每个框一个 ##：角色名 / 基础信息 / 性格 / 外貌 / 背景；一框式时 ## 角色名 + 「角色资料」框的原文", kind: "character" },
     { section: "# 用户资料", from: "面具，每个框一个 ##：名字 / 用户人设（写了才有这一段）", kind: "persona" },
-    { section: "# 世界与剧情", from: "角色卡，每个框一个 ##：世界观 / 对{{user}}的初始认知 / 关系与身份 / 当前剧情 / 附加设定", kind: "character" },
+    { section: "# 世界与剧情", from: "角色卡。分框填写时每个框一个 ##：世界观 / 对{{user}}的初始认知 / 关系与身份 / 当前剧情 / 附加设定；一框式时是「世界与剧情」框的原文", kind: "character" },
     { section: "# 文风", from: "风味（叠多件时每件一个 ##，标题取材料名）", kind: "flavor" },
     { section: "# 正文输出要求", from: "两个 ##：内置的正文标记规则（在前）+ 杯型内容（在后）", kind: "glass" },
     { section: "# 状态栏", from: "格式说明在前，小票的「输出契约」是一个 ##，壳为 [状态栏]...[/状态栏]", kind: "ticket" },

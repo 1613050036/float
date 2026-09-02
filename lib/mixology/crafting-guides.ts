@@ -269,6 +269,7 @@ const MIX_CRAFT_FIELD_NOTES: Record<MixMaterialKind, string> = {
     character: `—— 工具字段对照 ——
 name＝角色名（同时是卡名）；hook＝一句话介绍；tags＝字符串数组（3~8 个短词）；
 baseInfo/personality/appearance/background/worldview/cognition/relations/plot/extra 对应基础信息/性格/外貌/背景/世界观/初始认知/关系与身份/当前剧情/附加设定；
+（另一种写法：profileMode＝"freeform" 时资料改为一框式——profileText＝「角色资料」整段正文、worldText＝「世界与剧情」整段正文，段内用 ## 小节自己分（如 ## 性格），角色名不用写进去；此时上面九个分框字段不再使用。用户的卡是哪种写法，查看材料 会说明，更新时沿用同一种。）
 openings＝字符串数组，每个元素是一条完整开场白，至少两条供玩家挑选（不需要 --- 分隔符）；
 examples＝数组 [{"role":"user"|"char","text":"…"}]，至少 2 轮（4 条），3~5 轮更好；canvas＝开场画布完整 HTML 字符串；cover＝封面图地址（https URL 或 dataURL，可用图床上传取得）。
 质量要求：开场白写满 2~3 条、每条四五百字起步且用正文标记书写（「」对白、*…*心声、【】场景行、~…~强调），示例对话写满 3~5 轮；画布按上方规格完整制作，不要缩水成一张简单信息卡交差。

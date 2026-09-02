@@ -194,9 +194,23 @@ export type MixCharacterCard = MixMaterialMeta & {
     examples?: { role: "user" | "char"; text: string }[];
     /** 附加设定：NPC、私设名词表等自由区 */
     extra?: string;
+    /**
+     * 资料的编辑模式。缺省/"form" = 分框表单：上面九个字段各占一框；
+     * "freeform" = 一框式：角色资料、世界与剧情各一个大框，正文（含作者自己写的 ## 小节）
+     * 原样进提示词，此时上面九个字段一律为空，profileText / worldText 才是正文。
+     * 角色名不在框里：仍由 charName 提供，装配时自动补 ## 角色名。
+     */
+    profileMode?: MixCardProfileMode;
+    /** 一框式的「角色资料」正文（仅 profileMode 为 "freeform" 时有意义） */
+    profileText?: string;
+    /** 一框式的「世界与剧情」正文（仅 profileMode 为 "freeform" 时有意义） */
+    worldText?: string;
     /** @deprecated 已被开场画布取代，仅为兼容旧数据保留 */
     authorNote?: string;
 };
+
+/** 角色卡资料的编辑模式：分框表单 / 一框式 */
+export type MixCardProfileMode = "form" | "freeform";
 
 /** 可由序言材料覆写标题的提示词分段 */
 export type MixSectionTitleKey =

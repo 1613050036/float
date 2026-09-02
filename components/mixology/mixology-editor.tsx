@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { BookOpen, FileText, Plus, Trash2 } from "lucide-react";
 import type {
+    MixCardProfileMode,
     MixCharacterCard,
     MixFilterRule,
     MixMaterial,
@@ -16,14 +17,23 @@ import type {
 } from "@/lib/mixology/types";
 import { createMixId, formatMixTags, MIX_KIND_LABELS, MIX_PANEL_DEFAULT_LAYOUT, MIX_SECTION_TITLE_DEFAULTS, MIX_TAG_MAX, mixPanelLayoutOf, parseMixTags, type MixSectionTitleKey } from "@/lib/mixology/types";
 import { applyMixFilterRules } from "@/lib/mixology/prose";
+import {
+    buildMixCardFreeformText,
+    MIX_CARD_PROFILE_FALLBACK,
+    MIX_CARD_PROFILE_FIELDS,
+    MIX_CARD_WORLD_FALLBACK,
+    MIX_CARD_WORLD_FIELDS,
+    parseMixCardFreeformText,
+} from "@/lib/mixology/card-freeform";
 import { MixCraftSheet, MixPreviewInline, MixStructureSheet } from "./mixology-preview";
+import { MixConfirm } from "./mixology-shared";
 
 const OPENING_SEPARATOR = "\n---\n";
 
 /** 每类材料点进来先说清楚：这是干什么的、写完落在提示词哪一段 */
 const KIND_GUIDE: Record<MixMaterialKind, { what: string; where: string }> = {
     character: {
-        what: "这里写角色资料：身份、外貌、性格、所处世界、与玩家的初始关系，以及开场白与示例对话。",
+        what: "这里写角色资料：身份、外貌、性格、所处世界、与玩家的初始关系，以及开场白与示例对话。资料可以分框填，也可以切成一框式自己排 ## 小节。",
         where: "进入「角色资料」「世界与剧情」「示例对话」三段。",
     },
     persona: {
@@ -165,6 +175,13 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
     const [relations, setRelations] = useState(initialCard?.relations ?? "");
     const [plot, setPlot] = useState(initialCard?.plot ?? "");
     const [extra, setExtra] = useState(initialCard?.extra ?? "");
+    // 资料编辑模式（按卡存）：分框表单 / 一框式。一框式时两段正文各在一个大框里，
+    // 九个分框的 state 在保存时不落库；切换时在两边之间换算（见 card-freeform）。
+    const [profileMode, setProfileMode] = useState<MixCardProfileMode>(initialCard?.profileMode === "freeform" ? "freeform" : "form");
+    const [profileText, setProfileText] = useState(initialCard?.profileText ?? "");
+    const [worldText, setWorldText] = useState(initialCard?.worldText ?? "");
+    // 一框式切回分框是有损的（认不出的小节并进兜底框）：先弹一句确认
+    const [modeConfirm, setModeConfirm] = useState<{ unmatched: number } | null>(null);
     const [openingsText, setOpeningsText] = useState(initialCard?.openings.join(OPENING_SEPARATOR) ?? "");
     const [canvas, setCanvas] = useState(initialCard?.canvas ?? "");
     const [examples, setExamples] = useState<{ role: "user" | "char"; text: string }[]>(
@@ -260,6 +277,48 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
         }
     };
 
+    const formValues = { baseInfo, personality, appearance, background, worldview, cognition, relations, plot, extra };
+
+    /** 分框 → 一框式：无损，每个非空框变成一个 ## 小节 */
+    const switchToFreeform = () => {
+        setProfileText(buildMixCardFreeformText(MIX_CARD_PROFILE_FIELDS, formValues));
+        setWorldText(buildMixCardFreeformText(MIX_CARD_WORLD_FIELDS, formValues));
+        setProfileMode("freeform");
+    };
+
+    const parsedFreeform = () => ({
+        profile: parseMixCardFreeformText(profileText, MIX_CARD_PROFILE_FIELDS, MIX_CARD_PROFILE_FALLBACK),
+        world: parseMixCardFreeformText(worldText, MIX_CARD_WORLD_FIELDS, MIX_CARD_WORLD_FALLBACK),
+    });
+
+    /** 一框式 → 分框：按标题认领回各框；认不出的先问一句再动手 */
+    const requestSwitchToForm = () => {
+        const { profile, world } = parsedFreeform();
+        const unmatched = profile.unmatched + world.unmatched;
+        if (unmatched > 0) {
+            setModeConfirm({ unmatched });
+            return;
+        }
+        applySwitchToForm();
+    };
+
+    const applySwitchToForm = () => {
+        const { profile, world } = parsedFreeform();
+        setBaseInfo(profile.values.baseInfo ?? "");
+        setPersonality(profile.values.personality ?? "");
+        setAppearance(profile.values.appearance ?? "");
+        setBackground(profile.values.background ?? "");
+        setWorldview(world.values.worldview ?? "");
+        setCognition(world.values.cognition ?? "");
+        setRelations(world.values.relations ?? "");
+        setPlot(world.values.plot ?? "");
+        setExtra(world.values.extra ?? "");
+        setProfileText("");
+        setWorldText("");
+        setProfileMode("form");
+        setModeConfirm(null);
+    };
+
     const handleSave = () => {
         const trimmedName = name.trim();
         if (!trimmedName) {
@@ -299,6 +358,16 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                 relations: relations.trim() || undefined,
                 plot: plot.trim() || undefined,
                 extra: extra.trim() || undefined,
+                ...(profileMode === "freeform"
+                    ? {
+                        // 一框式只存两段正文，九个分框一律清空——正文只有一份，谁读都一样
+                        profileMode: "freeform" as const,
+                        profileText: profileText.trim() || undefined,
+                        worldText: worldText.trim() || undefined,
+                        baseInfo: undefined, personality: undefined, appearance: undefined, background: undefined,
+                        worldview: undefined, cognition: undefined, relations: undefined, plot: undefined, extra: undefined,
+                    }
+                    : {}),
                 openings,
                 examples: examples.filter((e) => e.text.trim()).map((e) => ({ role: e.role, text: e.text.trim() })),
                 canvas: canvas.trim() || undefined,
@@ -469,15 +538,69 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
             ) : null}
             {isCharacter ? (
                 <>
-                    <Field label="基础信息"><textarea className="mix-textarea" value={baseInfo} onChange={(e) => setBaseInfo(e.target.value)} placeholder="例：27 岁 / 183cm / 便利店夜班店员" /></Field>
-                    <Field label="性格"><textarea className="mix-textarea" value={personality} onChange={(e) => setPersonality(e.target.value)} placeholder="例：嘴上嫌弃手上诚实，怕麻烦但从不真的拒绝人" /></Field>
-                    <Field label="外貌"><textarea className="mix-textarea" value={appearance} onChange={(e) => setAppearance(e.target.value)} placeholder="例：高瘦，总把制服外套袖子卷到手肘，左耳有个旧耳洞" /></Field>
-                    <Field label="背景"><textarea className="mix-textarea" value={background} onChange={(e) => setBackground(e.target.value)} placeholder="例：三年前从老家搬来，白天在读夜校，夜班是为了付学费" /></Field>
-                    <Field label="世界观"><textarea className="mix-textarea" value={worldview} onChange={(e) => setWorldview(e.target.value)} placeholder="故事发生在什么世界。例：普通现代都市，没有超自然设定" /></Field>
-                    <Field label={"对{{user}}的初始认知"}><textarea className="mix-textarea" value={cognition} onChange={(e) => setCognition(e.target.value)} placeholder="开局时角色对你了解到什么程度。例：只知道你是每周来三次的常客，不知道名字" /></Field>
-                    <Field label="关系与身份"><textarea className="mix-textarea" value={relations} onChange={(e) => setRelations(e.target.value)} placeholder="玩家可以代入哪些身份、各自什么关系。例：熟客（微妙的默契）/ 新同事（他带你）" /></Field>
-                    <Field label="当前剧情"><textarea className="mix-textarea" value={plot} onChange={(e) => setPlot(e.target.value)} placeholder="故事从哪一刻开始。例：雨夜，打烊前十分钟，店里只剩你们两个" /></Field>
-                    <Field label="附加设定"><textarea className="mix-textarea" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="配角、私设名词、地点等。例：店长老周只在白班出现；「三号柜」是他们之间的暗号" /></Field>
+                    {/* 资料编辑模式：分框表单 = 每框一个 ##；一框式 = 两段正文自己排 ## 小节。
+                        切换会把已填的内容换算到另一边（分框→一框式无损，反向认不出的并进兜底框） */}
+                    <Field label="资料写法">
+                        <div className="mix-subtabs" style={{ margin: 0 }} role="tablist" aria-label="资料编辑模式">
+                            <button
+                                type="button"
+                                role="tab"
+                                data-active={profileMode === "form" ? "true" : undefined}
+                                aria-selected={profileMode === "form"}
+                                onClick={() => { if (profileMode !== "form") requestSwitchToForm(); }}
+                            >
+                                分框填写
+                            </button>
+                            <button
+                                type="button"
+                                role="tab"
+                                data-active={profileMode === "freeform" ? "true" : undefined}
+                                aria-selected={profileMode === "freeform"}
+                                onClick={() => { if (profileMode !== "freeform") switchToFreeform(); }}
+                            >
+                                一框式
+                            </button>
+                        </div>
+                        <div className="mix-form-note">
+                            {profileMode === "freeform"
+                                ? "两个大框各对应提示词的一段，## 开头的行就是小节标题，可增删改。角色名由上面的名字框提供，不用写在框里。"
+                                : "每个框的标题就是提示词里的 ## 标题。嫌框多可切到一框式，已填的内容会自动拼进去。"}
+                        </div>
+                    </Field>
+                    {profileMode === "freeform" ? (
+                        <>
+                            <Field label="角色资料" hint="进入「角色资料」段">
+                                <textarea
+                                    className="mix-textarea"
+                                    style={{ minHeight: 220 }}
+                                    value={profileText}
+                                    onChange={(e) => setProfileText(e.target.value)}
+                                    placeholder={"例：\n## 基础信息\n27 岁 / 183cm / 便利店夜班店员\n\n## 性格\n嘴上嫌弃手上诚实，怕麻烦但从不真的拒绝人\n\n## 外貌\n高瘦，总把制服外套袖子卷到手肘\n\n## 背景\n三年前从老家搬来，白天在读夜校"}
+                                />
+                            </Field>
+                            <Field label="世界与剧情" hint="进入「世界与剧情」段">
+                                <textarea
+                                    className="mix-textarea"
+                                    style={{ minHeight: 220 }}
+                                    value={worldText}
+                                    onChange={(e) => setWorldText(e.target.value)}
+                                    placeholder={"例：\n## 世界观\n普通现代都市，没有超自然设定\n\n## 对{{user}}的初始认知\n只知道你是每周来三次的常客，不知道名字\n\n## 关系与身份\n熟客（微妙的默契）/ 新同事（他带你）\n\n## 当前剧情\n雨夜，打烊前十分钟，店里只剩你们两个\n\n## 附加设定\n店长老周只在白班出现"}
+                                />
+                            </Field>
+                        </>
+                    ) : (
+                        <>
+                        <Field label="基础信息"><textarea className="mix-textarea" value={baseInfo} onChange={(e) => setBaseInfo(e.target.value)} placeholder="例：27 岁 / 183cm / 便利店夜班店员" /></Field>
+                        <Field label="性格"><textarea className="mix-textarea" value={personality} onChange={(e) => setPersonality(e.target.value)} placeholder="例：嘴上嫌弃手上诚实，怕麻烦但从不真的拒绝人" /></Field>
+                        <Field label="外貌"><textarea className="mix-textarea" value={appearance} onChange={(e) => setAppearance(e.target.value)} placeholder="例：高瘦，总把制服外套袖子卷到手肘，左耳有个旧耳洞" /></Field>
+                        <Field label="背景"><textarea className="mix-textarea" value={background} onChange={(e) => setBackground(e.target.value)} placeholder="例：三年前从老家搬来，白天在读夜校，夜班是为了付学费" /></Field>
+                        <Field label="世界观"><textarea className="mix-textarea" value={worldview} onChange={(e) => setWorldview(e.target.value)} placeholder="故事发生在什么世界。例：普通现代都市，没有超自然设定" /></Field>
+                        <Field label={"对{{user}}的初始认知"}><textarea className="mix-textarea" value={cognition} onChange={(e) => setCognition(e.target.value)} placeholder="开局时角色对你了解到什么程度。例：只知道你是每周来三次的常客，不知道名字" /></Field>
+                        <Field label="关系与身份"><textarea className="mix-textarea" value={relations} onChange={(e) => setRelations(e.target.value)} placeholder="玩家可以代入哪些身份、各自什么关系。例：熟客（微妙的默契）/ 新同事（他带你）" /></Field>
+                        <Field label="当前剧情"><textarea className="mix-textarea" value={plot} onChange={(e) => setPlot(e.target.value)} placeholder="故事从哪一刻开始。例：雨夜，打烊前十分钟，店里只剩你们两个" /></Field>
+                        <Field label="附加设定"><textarea className="mix-textarea" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="配角、私设名词、地点等。例：店长老周只在白班出现；「三号柜」是他们之间的暗号" /></Field>
+                        </>
+                    )}
                     <Field label="开场白" hint="必填，写多个玩家开局可以挑，用单独一行 --- 分隔">
                         <textarea
                             className="mix-textarea"
@@ -853,6 +976,15 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
             ) : null}
             {structureOpen ? inOverlay(<MixStructureSheet highlight={kind} onClose={() => setStructureOpen(false)} />) : null}
             {craftOpen ? inOverlay(<MixCraftSheet kind={kind} onClose={() => setCraftOpen(false)} />) : null}
+            {modeConfirm ? inOverlay(
+                <MixConfirm
+                    title="切回分框填写？"
+                    body={`有 ${modeConfirm.unmatched} 段内容对不上任何一个框（自己加的小节或没有标题的散文）。它们不会丢，会降成 ### 小标题并进「背景」或「附加设定」框的末尾。`}
+                    confirmText="切回分框"
+                    onConfirm={applySwitchToForm}
+                    onCancel={() => setModeConfirm(null)}
+                />,
+            ) : null}
             {error ? <div style={{ color: "#e2a3a3", fontSize: 12, marginTop: 12 }}>{error}</div> : null}
             <div className="mix-form-footer">
                 <button type="button" className="mix-ghost-btn" onClick={onCancel}>取消</button>

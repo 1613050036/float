@@ -19,6 +19,7 @@ import {
     UserRound,
 } from "lucide-react";
 import type { MixCharacterCard, MixMaterial, MixMaterialKind } from "@/lib/mixology/types";
+import { isMixCardFreeform } from "@/lib/mixology/card-freeform";
 import { MIX_KIND_LABELS, MIX_PANEL_DEFAULT_LAYOUT, mixEncoreRenderHtml, mixKindHasCover, mixKindRunsActiveCode, mixPanelLayoutOf, mixPanelLayoutSummary, normalizeMixTags } from "@/lib/mixology/types";
 import { applyMixMacros, MIX_DEFAULT_USER_NAME } from "@/lib/mixology/assembler";
 import { MixPreviewInline } from "./mixology-preview";
@@ -245,15 +246,25 @@ export function MaterialDetail({ material }: { material: MixMaterial }) {
         return (
             <>
                 <DetailField label="一句话介绍" value={card.hook} />
-                <DetailField label="基础信息" value={card.baseInfo} />
-                <DetailField label="性格" value={card.personality} />
-                <DetailField label="外貌" value={card.appearance} />
-                <DetailField label="背景" value={card.background} />
-                <DetailField label="世界观" value={card.worldview} />
-                <DetailField label="初始认知" value={card.cognition} />
-                <DetailField label="关系与身份" value={card.relations} />
-                <DetailField label="当前剧情" value={card.plot} />
-                <DetailField label="附加设定" value={card.extra} />
+                {isMixCardFreeform(card) ? (
+                    // 一框式：两段正文各一块，作者自己排的 ## 小节原样展示
+                    <>
+                        <DetailField label="角色资料" value={card.profileText} />
+                        <DetailField label="世界与剧情" value={card.worldText} />
+                    </>
+                ) : (
+                    <>
+                        <DetailField label="基础信息" value={card.baseInfo} />
+                        <DetailField label="性格" value={card.personality} />
+                        <DetailField label="外貌" value={card.appearance} />
+                        <DetailField label="背景" value={card.background} />
+                        <DetailField label="世界观" value={card.worldview} />
+                        <DetailField label="初始认知" value={card.cognition} />
+                        <DetailField label="关系与身份" value={card.relations} />
+                        <DetailField label="当前剧情" value={card.plot} />
+                        <DetailField label="附加设定" value={card.extra} />
+                    </>
+                )}
                 <DetailField label="开场白" value={card.openings.map((o, i) => `${card.openings.length > 1 ? `〔${i + 1}〕` : ""}${o}`).join("\n\n")} />
             </>
         );

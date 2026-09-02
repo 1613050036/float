@@ -6,12 +6,14 @@ import { downloadFile } from "@/lib/download-utils";
 import {
     MIX_SLOT_ORDER,
     createMixId,
+    type MixCharacterCard,
     type MixMaterial,
     type MixMaterialKind,
     type MixRecipe,
     type MixSlotEntry,
 } from "./types";
 import { getMixMaterial, isMixBuiltinId, loadMixRecipes, MIX_CABINET_UPDATED_EVENT, saveMixMaterial, saveMixRecipe } from "./storage";
+import { normalizeMixCardProfile } from "./card-freeform";
 
 const FILE_MARK = "float-mixology-material";
 const FILE_VERSION = 1;
@@ -289,8 +291,10 @@ export function parseMixMaterialsFromJson(text: string): MixMaterial[] {
             if (openings.length === 0) continue;
             // 文件导入一律视为自己的本地作品：换新 id、剥掉发布关联与导入标记，
             // 修改/导出/发布全部照常（酒材页入柜的"别人的作品"限制与此无关）
-            materials.push({
-                ...(record as unknown as MixMaterial),
+            // 资料两种写法只留声明的那种（一框式清分框字段，分框清整段正文），
+            // 手写/旧版工具拼出来的文件两边都有时不至于各读各的
+            materials.push(normalizeMixCardProfile({
+                ...(record as unknown as MixCharacterCard),
                 id: createMixId("mixmat"),
                 publishedId: undefined,
                 publishedAt: undefined,
@@ -299,7 +303,7 @@ export function parseMixMaterialsFromJson(text: string): MixMaterial[] {
                 openings,
                 createdAt: now,
                 updatedAt: now,
-            } as MixMaterial);
+            } as MixCharacterCard));
             continue;
         }
         materials.push({

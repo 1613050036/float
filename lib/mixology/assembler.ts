@@ -23,6 +23,7 @@ import type {
     MixTicketMaterial,
 } from "./types";
 import { MIX_SECTION_TITLE_DEFAULTS, mixEncoreRenderHtml } from "./types";
+import { MIX_CARD_NAME_LABEL, isMixCardFreeform, mixCardProfileText, mixCardTextHasNameHeading, mixCardWorldText } from "./card-freeform";
 
 export const MIX_DEFAULT_USER_NAME = "你";
 
@@ -110,16 +111,6 @@ function stackBody(materials: MixMaterial[] | undefined, apply: (text: string) =
     if (!items.length) return "";
     if (items.length === 1) return apply(items[0].text);
     return items.map((item, i) => `## ${apply(item.name || `第 ${i + 1} 件`)}\n${apply(item.text)}`).join("\n\n");
-}
-
-/**
- * 一个输入框 = 一个二级标题段。标题用的就是界面上那个框的标签，
- * 让作者在编辑器里看到的结构和发给模型的结构对得上。空框整段消失，不留空壳标题。
- */
-function field(label: string, value: string | undefined): string | null {
-    const trimmed = value?.trim();
-    if (!trimmed) return null;
-    return `## ${label}\n${trimmed}`;
 }
 
 function sectionBlock(title: string, lines: (string | null)[]): string | null {
@@ -258,6 +249,9 @@ export function assembleMixPrompt(input: MixAssembleInput): MixAssembledPrompt {
     const encores = (m.encore ?? []).filter((item): item is MixEncoreMaterial => item.kind === "encore");
 
     const apply = (text: string) => applyMixMacros(text, charName, userName, input.state);
+    // 两段资料的正文：表单式由各框拼成 ## 小节，一框式取作者写的原文（口径见 card-freeform）
+    const profileText = mixCardProfileText(card);
+    const worldText = mixCardWorldText(card);
 
     // 分段标题：序言材料可整套覆写（让标题措辞跟上序言定的基调），
     // 留空/缺省的键用默认标题；标题里也吃 {{char}}/{{user}} 宏。
@@ -278,12 +272,11 @@ export function assembleMixPrompt(input: MixAssembleInput): MixAssembledPrompt {
         // 序言：配了才有，宏照常替换；没配整段消失（与其他段一致）
         preface?.content.trim() ? apply(preface.content.trim()) : null,
         baseText ? `# ${sectionTitle("base")}\n${baseText}` : null,
+        // 角色资料：分框表单时每框一个 ##；一框式时作者写的正文（含自己的 ## 小节）原样进来。
+        // 角色名两种模式都由卡名提供——一框式正文里作者自己写了 ## 角色名 才不重复补。
         sectionBlock(sectionTitle("character"), [
-            `## 角色名\n${charName}`,
-            field("基础信息", card.baseInfo),
-            field("性格", card.personality),
-            field("外貌", card.appearance),
-            field("背景", card.background),
+            isMixCardFreeform(card) && mixCardTextHasNameHeading(profileText) ? null : `## ${MIX_CARD_NAME_LABEL}\n${charName}`,
+            profileText || null,
         ].map((l) => (l ? apply(l) : l))),
         // 用户资料：{{user}} 是谁。由面具材料提供，帮模型称呼与理解对面的人
         persona && persona.content.trim()
@@ -296,14 +289,9 @@ export function assembleMixPrompt(input: MixAssembleInput): MixAssembledPrompt {
                 `## 用户人设\n${apply(persona.content.trim())}`,
             ].join("\n\n")
             : null,
-        sectionBlock(sectionTitle("world"), [
-            field("世界观", card.worldview),
-            // 标题跟编辑器里那个框的标签一字不差；里面的 {{user}} 会在下面统一替换成用户的名字
-            field("对{{user}}的初始认知", card.cognition),
-            field("关系与身份", card.relations),
-            field("当前剧情", card.plot),
-            field("附加设定", card.extra),
-        ].map((l) => (l ? apply(l) : l))),
+        // 世界与剧情：同上。分框时标题跟编辑器里那个框的标签一字不差（含「对{{user}}的初始认知」），
+        // 里面的 {{user}} 会统一替换成用户的名字
+        sectionBlock(sectionTitle("world"), [worldText || null].map((l) => (l ? apply(l) : l))),
         flavorText ? `# ${sectionTitle("flavor")}\n${flavorText}` : null,
         // 内置协议在前，作者写的正文输出要求接在后面，各自是一个 ## 条目
         `# ${sectionTitle("glass")}\n${PROSE_PROTOCOL}${glassText ? `\n\n## ${sectionTitle("glass")}\n${glassText}` : ""}`,
