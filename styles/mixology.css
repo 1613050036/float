@@ -3305,7 +3305,9 @@
     vertical-align: -0.18em;
     width: 1.5em;
     height: 1.5em;
-    margin-left: 0.35em;
+    /* 前面是全角「」」，字形自带右半边留白，这里不再加左边距（甚至往回收一点）；
+       右边补一格，别贴着后面的叙述 */
+    margin: 0 0.3em 0 -0.08em;
     border: 1px solid rgba(141, 123, 245, 0.35);
     border-radius: 999px;
     background: rgba(141, 123, 245, 0.14);
