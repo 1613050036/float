@@ -2564,6 +2564,24 @@
     padding: 10px 12px;
     border-radius: 14px;
     background: var(--mix-panel);
+    /* 长按拖动排序：不让系统弹出选中/长按菜单；竖向滚动仍交给浏览器，长按成立后再由脚本拦 */
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.mix-stack-list[data-dragging="true"] {
+    touch-action: none;
+}
+
+.mix-stack-row[data-dragging="true"] {
+    position: relative;
+    z-index: 2;
+    transition: box-shadow 0.18s ease, background 0.18s ease;
+    background: var(--mix-panel-2);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(141, 123, 245, 0.35);
 }
 
 .mix-stack-order {
