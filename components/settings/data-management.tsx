@@ -453,7 +453,8 @@ export function DataManagement({ onNotice }: DataManagementProps) {
   };
 
   const executeExport = (moduleIds: DataModuleId[]) => runAction("导出中", async () => {
-    const { blob, manifest, warnings } = await createBackupBlob(moduleIds, { excludeMedia: cloudConfig.excludeMedia });
+    // 本地文件带上云服务连接信息：恢复后云备份直接是通的，不用再走一遍部署
+    const { blob, manifest, warnings } = await createBackupBlob(moduleIds, { excludeMedia: cloudConfig.excludeMedia, includeCloudCredentials: true });
     const note = manifest.mediaExcluded ? "（不含图片/多媒体）" : "";
     // 导出侧不静默：数据库打不开 / 关键模块 0 记录必须当面告知，
     // 否则用户会带着一个"看起来成功、实际缺整库"的备份走（用户实报踩坑）
