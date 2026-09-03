@@ -1320,6 +1320,35 @@
     color: var(--mix-prose);
 }
 
+/* 正文里的 HTML 片段：沙盒框，透明底，占满一行，不吃首行缩进 */
+.mix-html-block {
+    margin: 0 0 15px;
+    text-indent: 0;
+}
+
+.mix-html-block:last-child {
+    margin-bottom: 0;
+}
+
+/* 代码块：等宽、可横向滚，不吃首行缩进 */
+.mix-code {
+    margin: 0 0 15px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.32);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(var(--mix-prose-rgb), 0.9);
+    font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    text-indent: 0;
+    white-space: pre;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.mix-code:last-child {
+    margin-bottom: 0;
+}
+
 /* 首行缩进两字，书籍排版。场景过场行（.mix-scene）是同级的另一种段，不吃缩进 */
 .mix-para {
     margin: 0 0 15px;

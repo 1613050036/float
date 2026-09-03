@@ -1034,7 +1034,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                     const shown = applyMixFilterRules(mixStreamText(live), assets.filterRules, "display");
                     return shown ? (
                         <div className="mix-live-turn">
-                            <MixProseView text={shown} />
+                            <MixProseView text={shown} streaming />
                         </div>
                     ) : (
                         <div className="mix-game-thinking" aria-label="生成中">

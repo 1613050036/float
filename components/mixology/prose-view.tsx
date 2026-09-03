@@ -5,10 +5,12 @@
 //   .mix-prose 正文容器 / .mix-para 普通段 / .mix-scene 场景过场行
 //   .mix-dialogue 对白 / .mix-thought 心声 / .mix-accent 强调 / .mix-narration 叙述
 //   .mix-say-btn 对白后面的机括按钮（材料声明了 dialogueButton 才有）
+//   .mix-html-block 正文里的 HTML 片段（沙盒框） / .mix-code 代码块
 
 import { useMemo, type ReactNode } from "react";
 import { Bookmark, Heart, Languages, Play, Quote, Sparkles, Star, StickyNote, Volume2 } from "lucide-react";
 import { parseMixProse, type MixProseParagraph } from "@/lib/mixology/prose";
+import { MixRichText } from "./rich-text";
 
 /**
  * 对白按钮的内置矢量图标：材料的 icon 写这些名字就画成与特调同色系的线性图标，
@@ -46,6 +48,17 @@ export type MixProseDialogue = {
 };
 
 function renderParagraph(paragraph: MixProseParagraph, key: number, dialogue?: MixProseDialogue) {
+    // HTML 片段：沙盒框就地渲染（与开场画布、尾调同一个框）；代码块：等宽显示
+    if (paragraph.type === "html") {
+        return <div className="mix-html-block" key={key}><MixRichText text={paragraph.html} /></div>;
+    }
+    if (paragraph.type === "code") {
+        return (
+            <pre className="mix-code" data-lang={paragraph.lang || undefined} key={key}>
+                <code>{paragraph.code}</code>
+            </pre>
+        );
+    }
     if (paragraph.type === "scene") {
         return (
             <p className="mix-scene" key={key}>
@@ -100,8 +113,8 @@ function renderParagraph(paragraph: MixProseParagraph, key: number, dialogue?: M
     );
 }
 
-export function MixProseView({ text, dialogue }: { text: string; dialogue?: MixProseDialogue }) {
-    const paragraphs = useMemo(() => parseMixProse(text), [text]);
+export function MixProseView({ text, dialogue, streaming }: { text: string; dialogue?: MixProseDialogue; streaming?: boolean }) {
+    const paragraphs = useMemo(() => parseMixProse(text, { streaming }), [text, streaming]);
     return (
         <div className="mix-prose">
             {paragraphs.map((paragraph, i) => renderParagraph(paragraph, i, dialogue))}
