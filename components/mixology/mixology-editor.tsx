@@ -210,6 +210,8 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
     const keptLayout = initial?.kind === "mechanism" ? initial.layout : undefined;
     const keptDock = initial?.kind === "mechanism" ? initial.dock : undefined;
     const [panelHtml, setPanelHtml] = useState(initial?.kind === "mechanism" ? initial.panelHtml ?? "" : "");
+    // 信任模式：代码直接在对局页面里跑（不进沙盒），拿裸 DOM 随便画；装入时会向玩家明示
+    const [trusted, setTrusted] = useState(initial?.kind === "mechanism" ? initial.trusted === true : false);
     // 界面要用的连接器名字（逗号隔开）；只有声明过的名字 mix.call 才放行
     const [connectorsText, setConnectorsText] = useState(initial?.kind === "mechanism" ? (initial.connectors ?? []).join(", ") : "");
     const connectorNames = useMemo(() => normalizeMixConnectorNames(connectorsText), [connectorsText]);
@@ -401,9 +403,10 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                 script: script.trim() || undefined,
                 layout: keptLayout,
                 dock: keptDock,
-                panelHtml: panelHtml.trim() || undefined,
+                panelHtml: trusted ? undefined : panelHtml.trim() || undefined,
                 connectors: connectorNames.length ? connectorNames : undefined,
                 dialogueButton,
+                trusted: trusted || undefined,
             });
             return;
         }
@@ -825,16 +828,28 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
             ) : null}
             {kind === "mechanism" ? (
                 <>
-                    <Field label="钩子逻辑" hint="可留空。存储与下面的界面共用一份">
+                    <Field label="运行方式">
+                        <label className="flex items-center gap-3 rounded-[14px] bg-black/[0.03] px-3 py-2.5">
+                            <input type="checkbox" checked={trusted} onChange={(e) => setTrusted(e.target.checked)} />
+                            <span className="menu-label flex-1">信任模式：代码直接在对局页面里运行</span>
+                        </label>
+                        <div className="mix-form-note">
+                            {trusted
+                                ? "不进沙盒。代码能拿到每轮正文的裸 DOM 随便画、能自己联网，也能碰到整台小手机的数据。玩家装入时会看到风险提示，只在你清楚自己在写什么时开。此模式下不用「界面代码」，界面由代码里的 mix.slot 画。"
+                                : "默认在断网的沙盒里跑：钩子是纯函数，界面在 iframe 里，碰不到页面。要像插件那样自由渲染进正文就开信任模式。"}
+                        </div>
+                    </Field>
+                    <Field label={trusted ? "代码" : "钩子逻辑"} hint={trusted ? "进对局时执行一次，用 mix 登记坑位与钩子" : "可留空。存储与下面的界面共用一份"}>
                         <textarea
                             className="mix-textarea"
                             data-code="true"
                             style={{ minHeight: 200 }}
                             value={script}
                             onChange={(e) => setScript(e.target.value)}
-                            placeholder={"每个函数收一份 ctx，返回一个对象（不返回就是什么都不改）。\nctx: { turnCount, state, store, charName, userName, text, ticketRaw, encoreRaw }\n可返回: { text, note, state, store }\n\n例：玩家打「/掷骰」时换成一段带结果的指令\nfunction onBeforeSend(ctx) {\n  if (ctx.text !== \"/掷骰\") return;\n  var n = 1 + Math.floor(Math.random() * 20);\n  return { text: \"（我掷出了 \" + n + \" 点）\" };\n}\n\n例：连着三轮好感度上涨就提醒一次\nfunction onAfterReply(ctx) {\n  var up = Number(ctx.store.连涨 || 0);\n  return { store: { 连涨: String(up + 1) } };\n}"}
+                            placeholder={trusted ? "信任模式：整段代码进对局时在页面里执行一次，用 mix 登记坑位和钩子。\n\nmix.slot(名字, (el, ctx) => { … return 清理函数 })   坑位：turn 每轮正文下方一块 / prose 每轮正文容器本身 / float 铺满对局画面的悬浮层 / bottom 最新一轮之下\n  ctx: { turnId, text, index, state, store, charName, userName }\nmix.on(时机, fn)   sessionStart / beforeSend / afterReply / sessionEnd（与沙盒同一套 ctx 与返回）；dialogue 收 { id, text, turnId }\nmix.state / mix.store / mix.setState(obj) / mix.setStore(obj) / mix.say(text) / mix.toast(text)\nmix.call(连接器名, 参数) → Promise<{status, data}> / mix.play(id, 音频, type) / mix.stop() / mix.mark(id, 状态) / mix.refresh()\n\n例：每轮正文下面画一行按钮，点了以玩家身份发言\nmix.slot('turn', function (el, ctx) {\n  el.innerHTML = '<button>继续</button>';\n  el.querySelector('button').onclick = function () { mix.say('（继续）'); };\n});\nmix.on('afterReply', function (ctx) { return { store: { 轮数: String(ctx.turnCount) } }; });" : "每个函数收一份 ctx，返回一个对象（不返回就是什么都不改）。\nctx: { turnCount, state, store, charName, userName, text, ticketRaw, encoreRaw }\n可返回: { text, note, state, store }\n\n例：玩家打「/掷骰」时换成一段带结果的指令\nfunction onBeforeSend(ctx) {\n  if (ctx.text !== \"/掷骰\") return;\n  var n = 1 + Math.floor(Math.random() * 20);\n  return { text: \"（我掷出了 \" + n + \" 点）\" };\n}\n\n例：连着三轮好感度上涨就提醒一次\nfunction onAfterReply(ctx) {\n  var up = Number(ctx.store.连涨 || 0);\n  return { store: { 连涨: String(up + 1) } };\n}"}
                         />
                     </Field>
+                    {trusted ? null : (
                     <Field label="界面代码" hint="HTML + CSS + JS，在沙盒里跑；画在哪、多大、要不要应用画外壳，都在这里用 window.mix 写">
                         <textarea
                             className="mix-textarea"
@@ -845,6 +860,7 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                             placeholder={"<div style=\"padding:10px\">这里是常驻面板</div>\n\nwindow.mix\n  move(x, y) / size(w, h)         挪自己、改大小（占对局画面的百分比）\n  design(px)                      按多宽排版，画完整体缩放到面板大小；0 = 跟着面板走\n  fit(px)                         报内容多高\n  chrome(on) / plate(on)          要不要应用画的标题条 / 底板，默认都不画\n  drag(on) / resize(on)           玩家能不能拖、能不能缩放\n  z(n)                            叠放次序 0–9\n  grab()                          在自己画的标题条上 pointerdown 时调，接着由应用接管拖动\n  setStore(obj) / setState(obj)   写存储 / 写记住的值\n  say(text)                       以玩家身份说一句\n  call(name, params)              请宿主代调玩家配的连接器，返回 Promise<{status, data}>\n  mark(id, state)                 对白按钮状态回报：busy / playing / 空串\n  play(id, audio, type) / stop()  让宿主放一段音频（data: URL / ArrayBuffer / Uint8Array / Blob）\n  toast(text)                     给玩家弹一句短提示\nwindow.MIX_STATE / window.MIX_STORE  当前的值\nwindow.onMixDialogue({id, text, turnId})  玩家点了某句对白后的按钮（材料声明了对白按钮才有）\nwindow.onMixSync(state, store)       值变了会回调"}
                         />
                     </Field>
+                    )}
                     <Field label="需要的连接器" hint="选填，逗号隔开">
                         <input
                             className="mix-input"
@@ -891,11 +907,14 @@ export function MixMaterialEditor({ kind, initial, onSave, onCancel }: EditorPro
                             script,
                             connectors: connectorNames,
                             dialogueButton,
+                            trusted,
                         }}
                         disabled={!panelHtml.trim() && !script.trim()}
                     />
                     <div className="mix-struct-note" style={{ marginTop: 10 }}>
-                        沙盒里没有网络，跑太久会被掐断。存储一个对局一份，退出再进来还在。要调外部接口只能走连接器（mix.call）。
+                        {trusted
+                            ? "信任模式的代码直接跑在页面里，出错会弹提示但不会拖垮对局。存储一个对局一份，退出再进来还在。"
+                            : "沙盒里没有网络，跑太久会被掐断。存储一个对局一份，退出再进来还在。要调外部接口只能走连接器（mix.call）。"}
                     </div>
                 </>
             ) : null}

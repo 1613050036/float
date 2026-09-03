@@ -833,7 +833,8 @@ const MIX_MATERIAL_FIELDS = {
         type: "object",
         description: "mechanism 选填：摆放对象。slot 挂点：float（默认自由悬浮）/header/inputbar-left/inputbar-right（宿主画图标按钮点击开合面板，配 icon 一两个 emoji）/flow-top/flow-bottom（作为内嵌卡进滚动流）/hidden（不画面板，只在后台跑）；x/y/w/h 为占画面的百分比，autoHeight 高度随内容",
     },
-    panelHtml: { type: "string", description: "mechanism：常驻界面完整 HTML" },
+    panelHtml: { type: "string", description: "mechanism：常驻界面完整 HTML（信任模式下不用）" },
+    trusted: { type: "boolean", description: "mechanism 选填：true = 信任模式，script 直接在对局页面里执行（不进沙盒），用 mix.slot(坑位, (el, ctx)=>…) 拿裸 DOM 画进正文（坑位 turn/prose/float/bottom）、mix.on(时机, fn) 登记钩子；能自己 fetch。用户装入时会看到风险提示。只在用户明确要\"自由渲染进正文\"或需要联网时用，其余一律沙盒" },
     dialogueButton: { type: "object", properties: { icon: { type: "string" }, title: { type: "string" } }, description: "mechanism 选填：对白按钮 {icon, title}。icon 用内置名字 speaker/play/translate/note/bookmark/star/heart/quote/spark（画成特调同色系线性图标）。宿主在对局每句「对白」后画这颗图标，点击把这句递进界面 window.onMixDialogue({id, text, turnId})，界面可 mix.mark(id, 状态) 改图标、mix.play(id, 音频) 让宿主放、mix.toast(text) 提示。做「点一句念一句」这类玩法用它，需要有 panelHtml；不想画面板就 layout.slot 写 hidden" },
     connectors: { type: "array", items: { type: "string" }, description: "mechanism 选填：界面要用的连接器名字，如 [\"tts\"]。只有声明过的名字 mix.call 才放行；连接器本身用 创建连接器 建，用户到酒柜「连接器」里填密钥" },
 };

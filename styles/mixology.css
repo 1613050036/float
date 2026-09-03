@@ -3341,3 +3341,24 @@
     0%, 100% { transform: scale(1); opacity: 0.55; }
     50% { transform: scale(1.1); opacity: 1; }
 }
+
+/* ── 信任模式机括的坑位 ── */
+/* 每轮下方 / 最新一轮之下：一块普通的块级容器，机括自己排版 */
+.mix-trusted-slot {
+    text-indent: 0;
+}
+
+.mix-trusted-turn:empty {
+    display: none;
+}
+
+/* 悬浮层：铺满对局画面的透明层，机括画的元素自己定位；层本身不挡点击，元素挡 */
+.mix-trusted-float {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.mix-trusted-float > * {
+    pointer-events: auto;
+}

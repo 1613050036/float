@@ -552,6 +552,12 @@ export type MixMechanismMaterial = MixMaterialMeta & {
      * 界面只管收到之后做什么（比如请连接器合成语音）。需要有 panelHtml 才收得到。
      */
     dialogueButton?: MixDialogueButton;
+    /**
+     * 信任模式：script 直接在对局页面里执行（不进沙盒），像聊天插件一样拿到裸 DOM——
+     * 每轮正文、每轮下方、悬浮层都可以随意画，也能自己 fetch。代价是它看得到整台小手机的
+     * 数据。装入配方 / 入柜 / 导入时都会向玩家明示。panelHtml 在此模式下不用，界面由代码画。
+     */
+    trusted?: boolean;
 };
 
 export type MixDialogueButton = {

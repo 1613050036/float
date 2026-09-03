@@ -44,6 +44,7 @@ import {
 } from "./state";
 import { mergeHookState, type MixHook, type MixHookPayload } from "./mechanism-protocol";
 import { disposeMixSandboxes, runMixHook } from "./mechanism-runtime";
+import { disposeMixTrusted, runMixTrustedHook } from "./trusted-runtime";
 
 export const MIX_PROMPT_APP_ID = "mixology";
 const MIX_PROMPT_TAGS = ["mixology"];
@@ -284,6 +285,7 @@ export async function runMixSessionEnd(sessionId: string): Promise<void> {
         }
     }
     disposeMixSandboxes(sessionId);
+    disposeMixTrusted(sessionId);
 }
 
 export type MixReplyResult = {
@@ -334,7 +336,10 @@ async function runMechanismHooks(
             encoreRaws: input.encoreRaws,
             edited: input.edited || undefined,
         };
-        const result = await runMixHook(session.id, material.id, script, hook, payload);
+        // 信任模式的机括不进沙盒：钩子在页面里登记过的函数上跑，数据契约一样
+        const result = material.trusted
+            ? await runMixTrustedHook(session.id, material.id, hook, payload)
+            : await runMixHook(session.id, material.id, script, hook, payload);
         if (typeof result.text === "string") out.text = result.text;
         if (result.note) out.notes.push(result.note);
         if (result.state) out.state = mergeHookState(out.state, result.state);

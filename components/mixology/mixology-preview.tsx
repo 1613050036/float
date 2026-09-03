@@ -14,6 +14,8 @@ import { primeMixAudio } from "@/lib/mixology/audio-player";
 import { scopeMixCss } from "@/lib/mixology/css-scope";
 import { MIX_HOOK_LABELS, type MixHook } from "@/lib/mixology/mechanism-protocol";
 import { disposeMixSandboxesForMaterial, runMixHook } from "@/lib/mixology/mechanism-runtime";
+import { disposeMixTrusted, ensureMixTrusted, runMixTrustedHook, sendMixTrustedDialogue, type MixTrustedHost } from "@/lib/mixology/trusted-runtime";
+import { MixTrustedSlot } from "./trusted-slot";
 import { applyMixFilterRules } from "@/lib/mixology/prose";
 import { MIX_CRAFT_PROMPTS } from "@/lib/mixology/crafting-guides";
 import { MIX_KIND_LABELS, mixEncoreRenderHtml, type MixDialogueButton, type MixFilterRule, type MixMaterial, type MixMaterialKind, type MixPanelLayout, type MixState } from "@/lib/mixology/types";
@@ -32,7 +34,7 @@ export type MixPreviewTarget =
     | { kind: "encore"; html: string; raw?: string }
     | { kind: "canvas"; html: string; cover?: string }
     | { kind: "filter"; rules: MixFilterRule[] }
-    | { kind: "mechanism"; name: string; html: string; layout: MixPanelLayout; script: string; connectors?: string[]; dialogueButton?: MixDialogueButton };
+    | { kind: "mechanism"; name: string; html: string; layout: MixPanelLayout; script: string; connectors?: string[]; dialogueButton?: MixDialogueButton; trusted?: boolean };
 
 /**
  * 预览内容本体：各类材料的"眼见为实"。
@@ -225,14 +227,18 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
     const [marks, setMarks] = useState<Record<string, string>>({});
     const dialogue = useMemo<MixProseDialogue | undefined>(() => {
         const button = target.dialogueButton;
-        if (!button?.icon || !target.html.trim()) return undefined;
+        if (!button?.icon || !(target.html.trim() || (target.trusted && target.script.trim()))) return undefined;
         return {
             actions: [{ key: MECH_MATERIAL, icon: button.icon, title: button.title || target.name }],
             states: marks,
             idPrefix: "preview:",
-            onTap: (_key, segmentId, text) => { primeMixAudio(); sendMixDialogue(MECH_MATERIAL, { id: segmentId, text, turnId: "preview" }); },
+            onTap: (_key, segmentId, text) => {
+                primeMixAudio();
+                if (target.trusted) sendMixTrustedDialogue(MECH_SESSION, MECH_MATERIAL, { id: segmentId, text, turnId: "preview" });
+                else sendMixDialogue(MECH_MATERIAL, { id: segmentId, text, turnId: "preview" });
+            },
         };
-    }, [target.dialogueButton, target.html, target.name, marks]);
+    }, [target.dialogueButton, target.html, target.name, target.trusted, target.script, marks]);
     const [turn, setTurn] = useState(0);
     const [running, setRunning] = useState<MixHook | "">("");
     const [result, setResult] = useState<{ hook: MixHook; lines: string[] } | null>(null);
@@ -259,7 +265,9 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
             ticketRaw: hook === "afterReply" ? "好感度：61\n地点：吧台" : undefined,
             encoreRaw: undefined,
         };
-        const out = await runMixHook(MECH_SESSION, MECH_MATERIAL, target.script, hook, payload);
+        const out = target.trusted
+            ? await runMixTrustedHook(MECH_SESSION, MECH_MATERIAL, hook, payload)
+            : await runMixHook(MECH_SESSION, MECH_MATERIAL, target.script, hook, payload);
         const lines: string[] = [];
         if (typeof out.text === "string") lines.push(`正文改写\n${short(out.text, 400)}`);
         if (out.note) lines.push(`临时提示 · ${out.note.length} 字\n${short(out.note, 600)}`);
@@ -273,12 +281,40 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
         setResult({ hook, lines });
         setRunning("");
         if (hook === "afterReply") setTurn((n) => n + 1);
-    }, [target.script, turn, state, store]);
+    }, [target.script, target.trusted, turn, state, store]);
 
-    const hasPanel = target.html.trim().length > 0;
-    const headless = target.layout.slot === "hidden";
+    const trusted = target.trusted === true && target.script.trim().length > 0;
+    const hasPanel = trusted || target.html.trim().length > 0;
+    const headless = !trusted && target.layout.slot === "hidden";
     const [toasts, setToasts] = useState<string[]>([]);
     const pushToast = useCallback((text: string) => setToasts((prev) => [...prev.slice(-2), text]), []);
+
+    // 信任模式：在假舞台上真跑一遍代码——坑位挂到舞台的正文与下方，钩子按钮直接调它登记的函数
+    const stateRef = useRef(state); stateRef.current = state;
+    const storeRef = useRef(store); storeRef.current = store;
+    const trustedHost = useMemo<MixTrustedHost>(() => ({
+        getState: () => stateRef.current,
+        getStore: () => storeRef.current,
+        setStore: (_id, next) => setStore(next),
+        setState: (patch) => setState((prev) => ({ ...prev, ...patch })),
+        say: (text) => setSaid((prev) => [...prev.slice(-2), text]),
+        toast: pushToast,
+        mark: (_id, id, st) => setMarks((prev) => { const key = `${MECH_MATERIAL}|${id}`; const next = { ...prev }; if (st) next[key] = st; else delete next[key]; return next; }),
+        call: async () => { throw new Error("试摆里不调连接器，进对局再试。"); },
+        play: () => pushToast("试摆里不播放音频，进对局再试。"),
+        stop: () => undefined,
+        charName: () => MECH_CHAR,
+        userName: () => MECH_USER,
+    }), [pushToast]);
+    useEffect(() => {
+        if (!trusted) return;
+        ensureMixTrusted(MECH_SESSION, {
+            id: MECH_MATERIAL, kind: "mechanism", name: target.name || "机括", script: target.script,
+            connectors: target.connectors, dialogueButton: target.dialogueButton, trusted: true,
+            createdAt: 0, updatedAt: Date.now(),
+        }, trustedHost);
+        return () => disposeMixTrusted(MECH_SESSION);
+    }, [trusted, target.script, target.name, target.connectors, target.dialogueButton, trustedHost]);
 
     return (
         <>
@@ -287,9 +323,22 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
             <div className="mix-detail-label">界面</div>
             <div className="mix-mech-stage" ref={shellRef} style={{ aspectRatio: ratio }}>
                 <div className="mix-mech-bar">{MECH_CHAR}</div>
-                <div className="mix-mech-prose"><MixProseView text={MECH_SAMPLE} dialogue={dialogue} /></div>
+                <div className="mix-mech-prose" data-turn="preview">
+                    <MixProseView text={MECH_SAMPLE} dialogue={dialogue} />
+                    {trusted ? (
+                        <>
+                            <MixTrustedSlot sessionId={MECH_SESSION} materialId={MECH_MATERIAL} slot="prose" turnId="preview" text={MECH_SAMPLE} index={0} state={state} store={store} charName={MECH_CHAR} userName={MECH_USER}
+                                target={() => shellRef.current?.querySelector<HTMLElement>('[data-turn="preview"] .mix-prose') ?? null} />
+                            <MixTrustedSlot sessionId={MECH_SESSION} materialId={MECH_MATERIAL} slot="turn" turnId="preview" text={MECH_SAMPLE} index={0} state={state} store={store} charName={MECH_CHAR} userName={MECH_USER} />
+                            <MixTrustedSlot sessionId={MECH_SESSION} materialId={MECH_MATERIAL} slot="bottom" state={state} store={store} charName={MECH_CHAR} userName={MECH_USER} />
+                        </>
+                    ) : null}
+                </div>
                 <div className="mix-mech-input" />
                 <div className="mix-panel-layer">
+                    {trusted ? (
+                        <MixTrustedSlot sessionId={MECH_SESSION} materialId={MECH_MATERIAL} slot="float" state={state} store={store} charName={MECH_CHAR} userName={MECH_USER} className="mix-trusted-float" />
+                    ) : null}
                     {target.html.trim() && headless ? (
                         <div hidden aria-hidden="true">
                             <MixMechanismInline
@@ -342,6 +391,7 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
                 </div>
             ) : null}
             {headless ? <div className="mix-mech-hint">无界面机括：面板不画，点示例对白后面的按钮可试它的反应</div> : null}
+            {trusted ? <div className="mix-mech-hint">信任模式：代码已在这块舞台上执行，坑位挂在示例正文上；连接器与音频要进对局才真调</div> : null}
             {toasts.length ? <div className="mix-mech-hint">机括提示：{toasts[toasts.length - 1]}</div> : null}
             </>
             ) : null}

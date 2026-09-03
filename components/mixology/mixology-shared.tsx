@@ -362,9 +362,13 @@ export function MaterialDetail({ material }: { material: MixMaterial }) {
                         script: material.script ?? "",
                         connectors: material.connectors,
                         dialogueButton: material.dialogueButton,
+                        trusted: material.trusted,
                     }}
                     disabled={!material.panelHtml?.trim() && !material.script?.trim()}
                 />
+                {material.trusted ? (
+                    <DetailField label="运行方式" value="信任模式：代码直接在对局页面里运行（不进沙盒），能画进正文、能联网、也能碰到本机数据。只在信任作者时装。" />
+                ) : null}
                 {material.dialogueButton?.icon ? (
                     <DetailField label="对白按钮" value={`${material.dialogueButton.icon}${material.dialogueButton.title ? `　${material.dialogueButton.title}` : ""}（每句对白后面一颗，点击递进界面）`} />
                 ) : null}

@@ -246,6 +246,12 @@ ctx 字段：turnCount 已发生轮数；state 记住的值；store 本机括自
 对白按钮：材料声明 dialogueButton: { icon: "speaker", title: "朗读这句" } 后，宿主在对局每句「对白」后面画这颗图标（样式统一、沙盒不用管排版）。icon 写内置名字 speaker / play / translate / note / bookmark / star / heart / quote / spark 会画成与特调同色系的线性图标（优先用这些，别用 emoji，emoji 在各机型上长得不一样）。玩家点击时界面收到 window.onMixDialogue({ id, text, turnId })——text 是这句对白（不含「」），旧轮次也能点；界面用 mix.mark(id, "busy" | "playing" | "") 回报状态，宿主把图标画成转圈/播放中/恢复。同一句再点一次仍会收到事件，界面自己判断是停止还是重播。"点一句念一句""点一句翻译""点一句记进笔记"这类玩法都用它，不要再用钩子把正文抄进 store 再让玩家从面板里选。
 音频一律交给宿主放：mix.play(id, audio, type)（audio 收 data: URL、ArrayBuffer、Uint8Array 或 Blob；type 默认 audio/mpeg；传了 id 那颗按钮自动标播放中、放完自动恢复），mix.stop() 停。不要在界面里自己 new Audio().play()——对白按钮的点击落在宿主上，沙盒没有手势，iOS 会拦掉。
 无界面机括：只靠对白按钮/钩子驱动、不需要画面板的机括（如朗读），layout.slot 写 "hidden"——界面代码照常在看不见的沙盒里跑，收事件、调连接器、mix.play 都照常，只是什么都不画；要跟玩家说话用 mix.toast(text) 弹一句短提示。
+
+③ 信任模式（trusted: true，可选，慎用）：不进沙盒，script 在对局页面里执行一次（与聊天插件同环境），像插件一样拿裸 DOM，能画进正文、能自己 fetch；玩家装入/入柜/导入时会看到风险提示。此模式下不用 panelHtml，界面全由代码画。script 里可用全局 mix：
+- mix.slot(名字, (el, ctx) => { …; return 清理函数 })：坑位。"turn" 每轮 AI 回复下方一块空容器；"prose" 每轮正文容器本身（.mix-prose，可以查它里面的 .mix-dialogue / .mix-narration 等语义类并就地改 DOM）；"float" 铺满对局画面的透明层（你画的元素自己 position:absolute 定位）；"bottom" 最新一轮之下。ctx: { turnId, text（这一轮正文）, index, state, store, charName, userName }（float/bottom 没有 turn 相关字段）。同一坑位每轮各挂一次；state/store 变了会卸载重挂，返回的清理函数在卸载时调。
+- mix.on(时机, fn)：sessionStart / beforeSend / afterReply / sessionEnd 与沙盒钩子同一套 ctx 与返回值（{ text, note, state, store }）；"dialogue" 收 { id, text, turnId }（材料声明了 dialogueButton 才有）。
+- mix.state / mix.store（读）、mix.setState(obj)、mix.setStore(obj)、mix.say(text)、mix.toast(text)、mix.mark(id, 状态)、mix.call(连接器名, 参数) → Promise、mix.play(id, 音频, type)、mix.stop()、mix.refresh()（全部坑位重挂）。
+- 不要在坑位回调里做昂贵计算或每轮联网；DOM 用应用已有的类名与配色（深色底、--mix-violet 主色），别把整页样式改掉。只在用户明确要"自由渲染进正文"或必须联网时用信任模式，其余一律沙盒。
 - 美学要求：形态跟着玩法走——一颗胶囊、一条窄边栏、一枚角标、一张卡片，或一块整面的仪表盘都可以。原则只有三条：默认别挡住对话（大面板要能收起或退场）；气质贴合对局，把它当世界里的道具来做（罗盘、签筒、终端、账本），不要做成工程感的调试面板；动效轻、不抢注意力。配色与深色界面协调。
 
 请分段输出：
@@ -255,10 +261,11 @@ ctx 字段：turnCount 已发生轮数；state 记住的值；store 本机括自
 【玩法方案】一两句话：这件机括怎么玩，钩子和界面各负责什么
 【需要的连接器】用到外部接口才写，逗号隔开的名字（如 tts）并说明玩家该配什么接口、mix.call 传什么参数；不需要则写"无"
 【对白按钮】要在每句对白后面画按钮才写：图标名 + 提示文字（如 speaker 朗读这句）；不需要则写"无"
+【运行方式】沙盒（默认）或信任模式；信任模式要说明为什么非它不可
 【钩子逻辑】（不需要则写"无"）
 【界面代码】完整 HTML（不需要则写"无"）
 
-（若我在想法里注明「要 JSON」，请改为只输出（从 { 开始、到 } 结束，不要用 \`\`\` 代码块包裹、前后不加任何文字；字符串值内不允许出现真实换行或制表符（会直接导致导入失败），所有换行一律写成 \\n，长代码字段尤其要逐行检查；请用分行缩进的格式输出整个 JSON（不要压成一行，压成一行极易漏括号）；代码或正则里的一个反斜杠在 JSON 里写成两个，不要再多转一层）：{"kind":"mechanism","name":"材料名","hook":"…","tags":["…"],"connectors":["tts"],"dialogueButton":{"icon":"speaker","title":"朗读这句"},"script":"…","panelHtml":"…"}（不用外部接口就不写 connectors，不要对白按钮就不写 dialogueButton），纯 JSON、字符串内换行写成 \\n。）
+（若我在想法里注明「要 JSON」，请改为只输出（从 { 开始、到 } 结束，不要用 \`\`\` 代码块包裹、前后不加任何文字；字符串值内不允许出现真实换行或制表符（会直接导致导入失败），所有换行一律写成 \\n，长代码字段尤其要逐行检查；请用分行缩进的格式输出整个 JSON（不要压成一行，压成一行极易漏括号）；代码或正则里的一个反斜杠在 JSON 里写成两个，不要再多转一层）：{"kind":"mechanism","name":"材料名","hook":"…","tags":["…"],"connectors":["tts"],"dialogueButton":{"icon":"speaker","title":"朗读这句"},"trusted":false,"script":"…","panelHtml":"…"}（不用外部接口就不写 connectors，不要对白按钮就不写 dialogueButton，沙盒就不写 trusted），纯 JSON、字符串内换行写成 \\n。）
 
 【我的想法】：（想实现什么玩法，例如骰子面板、好感度进度条、随机事件抽卡）`,
 };
@@ -316,6 +323,7 @@ name＝材料名；hook＝一句话介绍；tags＝字符串数组；script＝�
 panelHtml＝常驻界面完整 HTML（可不传）；script 与 panelHtml 至少传一个；
 layout＝摆放对象（选填）：{"slot":"float|header|inputbar-left|inputbar-right|flow-top|flow-bottom|hidden","icon":"🎲","x":3,"y":62,"w":94,"h":20,"autoHeight":true,…}——slot 不写为自由悬浮；按钮位（header/inputbar-*）配 icon 一两个 emoji，宿主画按钮点击开合；流内位（flow-top/flow-bottom）嵌进滚动流随内容滚动。
 dialogueButton＝对象（选填）{"icon":"speaker","title":"朗读这句"}：宿主在每句对白后画这颗图标（icon 用内置名字 speaker/play/translate/note/bookmark/star/heart/quote/spark），点击递进界面 window.onMixDialogue({id,text,turnId})，界面 mix.mark(id, "busy"|"playing"|"") 回报状态、mix.play(id, 音频) 让宿主放、mix.toast(text) 提示玩家；layout.slot 可写 "hidden" 表示不画面板只在后台跑；
+trusted＝布尔（选填）：true 为信任模式，script 在页面里执行、用 mix.slot/mix.on 登记（见上文③），此时 panelHtml 不用；
 connectors＝字符串数组（选填，如 ["tts"]）：界面要用的连接器名字，只有声明过的名字 mix.call 才放行；连接器本身由用户在酒柜「连接器」里配（地址与密钥留在用户本机），你只声明名字并在界面里 mix.call(名字, 参数) 调用。
 图片细则：机括沙盒完全断网（CSP default-src 'none'），任何外链（含图床 URL）都加载不了，界面素材只能内联；调外部接口唯一的口子是连接器。`,
 };

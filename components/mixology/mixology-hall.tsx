@@ -818,9 +818,14 @@ export function MixologyHall({
                                                 return;
                                             }
                                             // 机括会在你的对局里按轮执行——入柜前得让人知道自己在装什么
+                                            const trusted = detailMaterial.kind === "mechanism" && (detailMaterial.payload as { trusted?: boolean }).trusted === true;
                                             setConfirm({
-                                                title: "这件机括会执行代码",
-                                                body: <>「{detailMaterial.name}」带的是<b>会在你的对局里按轮执行的代码</b>：它能改写你发出去的话、改写你看到的正文、以你的身份发言。<br />代码跑在没有网络、碰不到应用本体的沙盒里，但对话内容它看得到。<br />只在你信任作者时入柜。</>,
+                                                title: trusted ? "这件机括是信任模式，会直接在页面里运行" : "这件机括会执行代码",
+                                                body: trusted ? (
+                                                    <>「{detailMaterial.name}」的代码<b>不进沙盒，直接在你的对局页面里运行</b>：它能画进正文、能自己联网，也能读写这台小手机上的数据。<br />这和安装聊天插件是同一级别的信任。只在你信任作者时入柜。</>
+                                                ) : (
+                                                    <>「{detailMaterial.name}」带的是<b>会在你的对局里按轮执行的代码</b>：它能改写你发出去的话、改写你看到的正文、以你的身份发言。<br />代码跑在没有网络、碰不到应用本体的沙盒里，但对话内容它看得到。<br />只在你信任作者时入柜。</>
+                                                ),
                                                 confirmText: "我知道，入柜",
                                                 run: () => void importMaterial(detailMaterial),
                                             });

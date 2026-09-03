@@ -60,7 +60,7 @@ const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
  * 界面递上来的音频转成 Blob：data: URL 字符串、ArrayBuffer、类型化数组、Blob 都收。
  * 沙盒是不透明源，它自己造的 blob: URL 宿主打不开，所以只收"内容本身"。
  */
-function audioToBlob(audio: unknown, type: unknown): Blob | null {
+export function audioToBlob(audio: unknown, type: unknown): Blob | null {
     const mime = typeof type === "string" && type.trim() ? type.trim() : "audio/mpeg";
     if (audio instanceof Blob) return audio.size <= MAX_AUDIO_BYTES ? audio : null;
     if (audio instanceof ArrayBuffer) return audio.byteLength <= MAX_AUDIO_BYTES ? new Blob([audio], { type: mime }) : null;
