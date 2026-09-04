@@ -427,6 +427,16 @@ export function parseMixRecipeFile(text: string): { recipe: MixRecipe; materials
  * 已导入的同 id 覆盖更新；配方同理，自己的原杯不覆盖。
  * 返回给用户看的结果说明。
  */
+/**
+ * 一批材料里信任模式机括的名字。信任模式不进沙盒、直接在页面里跑，
+ * 每一条入柜路径（文件、大厅、资源市场）落库前都得拿这个名单向用户明示。
+ */
+export function mixTrustedMechanismNames(materials: MixMaterial[]): string[] {
+    return materials
+        .filter((m) => m.kind === "mechanism" && m.trusted === true)
+        .map((m) => m.name);
+}
+
 export function importMixRecipePack(pack: { recipe: MixRecipe; materials: MixMaterial[] }, author?: string): string {
     const signed = author?.trim() || undefined;
     let kept = 0;

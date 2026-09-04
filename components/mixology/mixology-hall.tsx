@@ -896,6 +896,10 @@ export function MixologyHall({
                                 const importable = parts.length - goneCount;
                                 // 配方里夹了几件机括：入柜确认要单独说清楚
                                 const mechanismCount = parts.filter((p) => !p.gone && mixKindRunsActiveCode(p.kind)).length;
+                                // 其中信任模式的机括不进沙盒，得单独点名
+                                const trustedNames = parts
+                                    .filter((p) => !p.gone && p.kind === "mechanism" && (p.material as { trusted?: boolean } | null | undefined)?.trusted === true)
+                                    .map((p) => p.name);
                                 return (
                                     <>
                                         <div className="mix-detail-label" style={{ marginTop: 12 }}>这杯里有</div>
@@ -908,13 +912,17 @@ export function MixologyHall({
                                             type="button"
                                             className="mix-brew-btn"
                                             onClick={() => setConfirm({
-                                                title: "连料入柜？",
+                                                title: trustedNames.length > 0 ? "这杯里有信任模式的机括" : "连料入柜？",
                                                 body: <>
                                                     会把「{detailRecipe.name}」以及里面的 <b>{importable} 味材料</b>一并放进你的酒柜（官方件直接用本地出厂版），之后在吧台就能开局。
                                                     {goneCount > 0 ? <><br />{goneCount} 味材料已从酒材页下架，这杯会缺味。</> : null}
-                                                    {mechanismCount > 0 ? (
-                                                        <><br /><br />其中 <b>{mechanismCount} 件是机括</b>：会在你的对局里按轮执行代码，能改写你发出去的话、你看到的正文，也能以你的身份发言。只在你信任作者时入柜。</>
+                                                    {trustedNames.length > 0 ? (
+                                                        <><br /><br />{trustedNames.map((n) => `「${n}」`).join("、")}是<b>信任模式的机括，不进沙盒，直接在你的对局页面里运行</b>：它能画进正文、能自己联网，也能读写这台小手机上的数据。这和安装聊天插件是同一级别的信任。</>
                                                     ) : null}
+                                                    {mechanismCount > trustedNames.length ? (
+                                                        <><br /><br />{trustedNames.length > 0 ? "另有" : "其中"} <b>{mechanismCount - trustedNames.length} 件是机括</b>：会在你的对局里按轮执行代码，能改写你发出去的话、你看到的正文，也能以你的身份发言。代码跑在没有网络、碰不到应用本体的沙盒里。</>
+                                                    ) : null}
+                                                    {mechanismCount > 0 ? <><br />只在你信任作者时入柜。</> : null}
                                                 </>,
                                                 confirmText: mechanismCount > 0 ? "我知道，入柜" : "入柜",
                                                 run: () => void importRecipe(detailRecipe),

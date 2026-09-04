@@ -215,6 +215,8 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
     const [confirmPlugin, setConfirmPlugin] = useState<string | null>(null);
     // 应用主题包前的覆盖确认：待导入的主题包文件路径
     const [confirmTheme, setConfirmTheme] = useState<string | null>(null);
+    // 特调资源里夹着信任模式机括：文件要先取下来才知道，所以是导入中途弹出、等用户答复
+    const [confirmTrusted, setConfirmTrusted] = useState<{ names: string[]; resolve: (ok: boolean) => void } | null>(null);
     // 「预设条目」四步流程：取到的条目 → 选新增/覆盖 → 选预设 → 选位置
     const [entryImport, setEntryImport] = useState<{
         prompt: Prompt;
@@ -420,7 +422,11 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
         setImportingTo(contactId ?? destination);
         try {
             // authorName：条目投稿人署名，特调入柜时随材料带入（别的目的地忽略）
-            const message = await importResourceHubFile(source, path, destination, { contactId, authorName: activeEntry?.author?.trim() || undefined });
+            const message = await importResourceHubFile(source, path, destination, {
+                contactId,
+                authorName: activeEntry?.author?.trim() || undefined,
+                confirmTrusted: (names) => new Promise<boolean>((resolve) => setConfirmTrusted({ names, resolve })),
+            });
             onNotice?.(message);
         } catch (err) {
             onNotice?.(`导入失败：${err instanceof Error ? err.message : String(err)}`);
@@ -1645,6 +1651,27 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
                                 setConfirmTheme(null);
                                 void runImport(target, "theme");
                             }}>确认应用</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 特调信任模式告知：这类机括不进沙盒，与插件同权限，落库前必须问一句 */}
+            {confirmTrusted && (
+                <div className="rh-dialog-overlay">
+                    <div className="rh-dialog" onClick={e => e.stopPropagation()}>
+                        <div className="rh-titlebar"><span className="rh-titlebar-text">这份资源里有信任模式的机括</span></div>
+                        <div className="rh-dialog-body">
+                            <span className="rh-dialog-icon">⚠️</span>
+                            <span>
+                                {confirmTrusted.names.map(n => `「${n}」`).join("、")}的代码<b>不进沙盒，直接在你的对局页面里运行</b>：
+                                它能画进正文、能自己联网，也能读写这台小手机上的数据（包括 API 配置与聊天记录）。
+                                这和安装聊天插件是同一级别的信任，只在你信任作者时入柜。
+                            </span>
+                        </div>
+                        <div className="rh-dialog-footer">
+                            <button className="rh-btn" onClick={() => { const c = confirmTrusted; setConfirmTrusted(null); c.resolve(false); }}>取消</button>
+                            <button className="rh-btn rh-btn-primary" onClick={() => { const c = confirmTrusted; setConfirmTrusted(null); c.resolve(true); }}>我知道，入柜</button>
                         </div>
                     </div>
                 </div>
