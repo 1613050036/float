@@ -466,8 +466,21 @@ export async function uploadResource(source: ResourceHubSource, payload: UploadP
 /** 统一编辑入口：同上，token 优先。 */
 export async function editResource(source: ResourceHubSource, record: MyUploadRecord, payload: EditPayload): Promise<void> {
     const config = loadUploadConfig();
-    if (config.githubToken.trim()) {
-        return editViaToken(config.githubToken.trim(), source, record, payload);
+    const token = config.githubToken.trim();
+    // 与上传一致：只有对仓库有写权限（仓库主/协作者）才直连 GitHub 提交；
+    // 普通用户填了自己的 Token 也没有写权限，直连会被 403，退回上传服务凭钥匙改。
+    // 权限查不到（网络/Token 失效）也按没有写权限处理，别让编辑卡死在 Token 上。
+    if (token && await hasPushPermission(token, source)) {
+        return editViaToken(token, source, record, payload);
     }
     return editViaService(config.endpoint, record, payload);
+}
+
+async function hasPushPermission(token: string, source: ResourceHubSource): Promise<boolean> {
+    try {
+        const info = await gh<{ permissions?: { push?: boolean } }>(token, "GET", `/repos/${source.owner}/${source.repo}`);
+        return info.permissions?.push === true;
+    } catch {
+        return false;
+    }
 }
