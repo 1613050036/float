@@ -567,8 +567,12 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
     const handleDeleteEntry = useCallback(async (entry: ShareIndexEntry) => {
         setDeleting(true);
         try {
-            // 本人上传的用删除凭证走上传服务；否则按管理员 Token 直删
-            const myRecord = loadMyUploads().find(r => r.path === entry.path);
+            // 本人上传的用删除凭证走上传服务；否则按管理员 Token 直删。
+            // 认人必须和显示删除按钮用同一套判断（myRecordFor）：它除了本机记录，
+            // 还认索引里的钥匙指纹。之前这里只查本机记录，换了设备、只导入了钥匙，
+            // 或者本机记录的路径和服务端安全化后的文件夹名对不上时，按钮照常显示，
+            // 点下去却走了管理员 Token 那条路，普通作者就会看到「请先填入 GitHub Token」。
+            const myRecord = myRecordFor(entry.path);
             if (myRecord) {
                 await ownerDeleteViaService(loadUploadConfig().endpoint, myRecord);
             } else {
@@ -588,7 +592,7 @@ export function ResourceHubApp({ onClose, onNotice }: { onClose: () => void; onN
         } finally {
             setDeleting(false);
         }
-    }, [onNotice]);
+    }, [myRecordFor, onNotice]);
 
     const handleSubmitClaim = useCallback(async () => {
         const entry = index?.entries.find(e => e.path === claimPath);
