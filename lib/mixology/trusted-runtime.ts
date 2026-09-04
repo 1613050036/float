@@ -42,6 +42,8 @@ export type MixTrustedHost = {
     setState: (patch: MixState) => void;
     say: (text: string) => void;
     toast: (text: string) => void;
+    /** 从玩家视角续写几版下一条消息（宿主用完整上下文调模型）；试摆里会 reject */
+    draft: (opts: { count?: number; hint?: string; styles?: string[]; length?: "short" | "medium" | "long" }) => Promise<string[]>;
     mark: (materialId: string, id: string, state: MixDialogueState) => void;
     call: (materialId: string, name: string, params: MixConnectorParams) => Promise<{ status: number; data: unknown }>;
     play: (materialId: string, id: string, audio: unknown, type?: string) => void;
@@ -85,6 +87,7 @@ class TrustedInstance {
             setStore: (store: unknown) => { if (store && typeof store === "object") host.setStore(materialId, store as MixMechanismStore); },
             say: (text: unknown) => host.say(String(text ?? "")),
             toast: (text: unknown) => host.toast(String(text ?? "")),
+            draft: (opts: unknown) => host.draft((opts && typeof opts === "object" ? opts : {}) as { count?: number; hint?: string; styles?: string[]; length?: "short" | "medium" | "long" }),
             mark: (id: unknown, state: unknown) => host.mark(materialId, String(id ?? ""), state === "busy" || state === "playing" ? state : ""),
             call: (name: unknown, params: unknown) => host.call(materialId, String(name ?? ""), (params && typeof params === "object" ? params : {}) as MixConnectorParams),
             play: (id: unknown, audio: unknown, type?: unknown) => host.play(materialId, String(id ?? ""), audio, typeof type === "string" ? type : undefined),

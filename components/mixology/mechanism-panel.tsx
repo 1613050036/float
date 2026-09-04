@@ -50,7 +50,8 @@ type PanelCommand =
     | { name: "mark"; id: unknown; state: unknown }
     | { name: "play"; id: unknown; audio: unknown; type: unknown }
     | { name: "stop" }
-    | { name: "toast"; text: unknown };
+    | { name: "toast"; text: unknown }
+    | { name: "draft"; id: unknown; opts: unknown };
 
 const MAX_SAY_LENGTH = 2_000;
 const MAX_TOAST_LENGTH = 120;
@@ -85,6 +86,41 @@ export function audioToBlob(audio: unknown, type: unknown): Blob | null {
         }
     }
     return null;
+}
+
+export type MixDraftRequest = { count: number; hint?: string; styles?: string[]; length?: "short" | "medium" | "long" };
+
+/** 界面递上来的续写参数把关：只收几个已知字段，长度都封顶 */
+function normalizeDraftOpts(raw: unknown): MixDraftRequest {
+    const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const count = Math.min(5, Math.max(1, Math.floor(Number(o.count) || 3)));
+    const hint = typeof o.hint === "string" ? o.hint.trim().slice(0, 300) : "";
+    const styles = Array.isArray(o.styles) ? o.styles.map((v) => String(v ?? "").trim().slice(0, 60)).filter(Boolean).slice(0, 5) : [];
+    const length = o.length === "short" || o.length === "long" ? o.length : "medium";
+    return { count, hint: hint || undefined, styles: styles.length ? styles : undefined, length };
+}
+
+/**
+ * mix.draft：请宿主从玩家视角续写几版下一条消息（用这一局完整上下文调一次模型）。
+ * 结果按 id 递回沙盒，界面自己排版、让玩家改完再 mix.say 发出。
+ */
+async function handleDraft(
+    command: { id: unknown; opts: unknown },
+    materialId: string,
+    onDraft: ((opts: MixDraftRequest) => Promise<string[]>) | undefined,
+    post: (payload: Record<string, unknown>) => void,
+): Promise<void> {
+    const id = Number(command.id);
+    if (!Number.isFinite(id)) return;
+    const reply = (payload: Record<string, unknown>) => post({ type: "call-result", callId: id, ...payload });
+    if (!onDraft) { reply({ ok: false, error: "这里不能续写（试摆预览里不调模型，进对局再试）。" }); return; }
+    if (!takeMixConnectorQuota(`draft:${materialId}`)) { reply({ ok: false, error: "续写太频繁：每件机括每分钟最多 30 次。" }); return; }
+    try {
+        const drafts = await onDraft(normalizeDraftOpts(command.opts));
+        reply({ ok: true, status: 200, data: drafts });
+    } catch (err) {
+        reply({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
 }
 
 /**
@@ -277,7 +313,17 @@ export function buildPanelDoc(html: string, state: MixState, store: MixMechanism
     play: function(id, audio, type){ send("play", { id: id == null ? "" : String(id), audio: audio, type: type || "" }); },
     stop: function(){ send("stop", {}); },
     // 给玩家弹一句短提示（出错、缺连接器之类）；无界面的机括靠它说话
-    toast: function(text){ send("toast", { text: String(text == null ? "" : text) }); }
+    toast: function(text){ send("toast", { text: String(text == null ? "" : text) }); },
+    // 请宿主从玩家视角续写几版下一条消息（用这一局完整上下文调一次模型）。
+    // opts: { count(1~5), hint(玩家想法), styles(各版立场), length: "short"|"medium"|"long" }
+    // 返回 Promise<string[]>；玩家挑一版改一改再 mix.say 发出。只在玩家点击后调。
+    draft: function(opts){
+      return new Promise(function(resolve, reject){
+        var id = ++callSeq;
+        calls[id] = { resolve: function(r){ resolve(r.data || []); }, reject: reject };
+        send("draft", { id: id, opts: opts || {} });
+      });
+    }
   };
   var callSeq = 0, calls = {};
 
@@ -405,6 +451,7 @@ export function MixMechanismPanel({
     connectors,
     onMark,
     onToast,
+    onDraft,
 }: {
     materialId: string;
     name: string;
@@ -423,6 +470,8 @@ export function MixMechanismPanel({
     onMark?: (materialId: string, id: string, state: MixDialogueState) => void;
     /** 界面用 mix.toast 给玩家弹一句短提示 */
     onToast?: (text: string) => void;
+    /** 界面用 mix.draft 请宿主从玩家视角续写；没传就是这里不能续写（试摆） */
+    onDraft?: (opts: MixDraftRequest) => Promise<string[]>;
 }) {
     const frameRef = useRef<HTMLIFrameElement | null>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -722,6 +771,9 @@ export function MixMechanismPanel({
                     if (text) onToast?.(text);
                     break;
                 }
+                case "draft":
+                    void handleDraft(command, materialId, onDraft, post);
+                    break;
                 default:
                     // 白名单以外一律不理会
                     break;
@@ -729,7 +781,7 @@ export function MixMechanismPanel({
         };
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [materialId, onStore, onState, onSay, onBox, canDrag, applyBox, scale, post, connectors, onMark, onDialogueBoot, onToast]);
+    }, [materialId, onStore, onState, onSay, onBox, canDrag, applyBox, scale, post, connectors, onMark, onDialogueBoot, onToast, onDraft]);
 
     const style: React.CSSProperties = {
         left: `${box.x}%`,
@@ -847,6 +899,7 @@ export function MixMechanismInline({
     connectors,
     onMark,
     onToast,
+    onDraft,
 }: {
     materialId: string;
     name: string;
@@ -864,6 +917,8 @@ export function MixMechanismInline({
     onMark?: (materialId: string, id: string, state: MixDialogueState) => void;
     /** 界面用 mix.toast 给玩家弹一句短提示 */
     onToast?: (text: string) => void;
+    /** 界面用 mix.draft 请宿主从玩家视角续写；没传就是这里不能续写（试摆） */
+    onDraft?: (opts: MixDraftRequest) => Promise<string[]>;
 }) {
     const frameRef = useRef<HTMLIFrameElement | null>(null);
     const stageRef = useRef<HTMLDivElement | null>(null);
@@ -981,6 +1036,9 @@ export function MixMechanismInline({
                     if (text) onToast?.(text);
                     break;
                 }
+                case "draft":
+                    void handleDraft(command, materialId, onDraft, post);
+                    break;
                 default:
                     // 位置类命令（box/grab/drag/setOpen…）在内嵌形态下没有意义，一律不理会
                     break;
@@ -988,7 +1046,7 @@ export function MixMechanismInline({
         };
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [materialId, onStore, onState, onSay, post, connectors, onMark, onDialogueBoot, onToast]);
+    }, [materialId, onStore, onState, onSay, post, connectors, onMark, onDialogueBoot, onToast, onDraft]);
 
     const designWidth = designPx === null ? 0 : designPx;
     const scale = designWidth && width > 0 ? width / designWidth : 1;
