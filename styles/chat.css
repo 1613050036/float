@@ -6672,23 +6672,6 @@
 }
 
 /* ── 底层调用日志：「查看原始」按钮 + 思维链 / 真实原始响应 ── */
-.api-log-raw-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 9px;
-  border: 1px solid color-mix(in srgb, var(--c-icon-active) 45%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--c-icon-active) 10%, transparent);
-  color: var(--c-icon-active);
-  font-size: calc(11px * var(--app-text-scale, 1));
-  line-height: 1.4;
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
-}
-.api-log-raw-tag:active {
-  opacity: 0.65;
-}
 .api-log-reasoning {
   padding: 8px;
   border-radius: 6px;

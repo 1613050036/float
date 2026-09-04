@@ -52,6 +52,7 @@ import {
     Radio,
     RotateCcw,
     Moon,
+    MoreHorizontal,
     Satellite,
     Send,
     X,
@@ -627,8 +628,10 @@ function FollowUpSettingsEditor({ onBack }: { onBack: () => void }) {
 function ApiLogViewer({ onBack }: { onBack: () => void }) {
     const [logs, setLogs] = useState<DebugInfo[]>([]);
     const [expandedId, setExpandedId] = useState<string | null>(null);
-    // 来源过滤：hiddenSources 里记录被取消勾选的来源；空集 = 全部显示
+    // 来源过滤：hiddenSources 里记录被取消勾选的来源；空集 = 全部显示。
+    // 选择器收进右上角三点按钮打开的底部弹窗，列表区不再占一块
     const [hiddenSources, setHiddenSources] = useState<Set<string>>(new Set());
+    const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
 
     useEffect(() => {
         setLogs([...getApiLogs()].reverse());
@@ -672,7 +675,22 @@ function ApiLogViewer({ onBack }: { onBack: () => void }) {
     };
 
     return (
-        <PageShell title="后台记录" onBack={onBack} className="absolute inset-0 z-[100]">
+        <PageShell
+            title="后台记录"
+            onBack={onBack}
+            className="absolute inset-0 z-[100]"
+            rightAction={logs.length > 0 ? (
+                <button
+                    type="button"
+                    className="page-back-btn"
+                    onClick={() => setSourcePickerOpen(true)}
+                    title="来源过滤"
+                    aria-label="来源过滤"
+                >
+                    <MoreHorizontal size={22} strokeWidth={1.5} />
+                </button>
+            ) : undefined}
+        >
             <div className="page-menu">
                 {logs.length === 0 ? (
                     <div className="ui-empty">
@@ -680,33 +698,44 @@ function ApiLogViewer({ onBack }: { onBack: () => void }) {
                     </div>
                 ) : (
                     <>
-                        {/* 显示设置：来源过滤复选框（查看原始回复请逐条展开，或到聊天界面点消息旁的「AI 原始回复」按钮） */}
-                        <div className="menu-group">
-                            <div className="px-4 py-3 flex flex-col gap-2">
-                                <div className="flex items-center justify-between">
-                                    <span className="menu-label">来源过滤</span>
-                                    <button
-                                        type="button"
-                                        className="ui-bare-btn ts-12 font-semibold text-[var(--c-icon-active)]"
-                                        onClick={toggleAll}
-                                    >
-                                        {allChecked ? "全不选" : "全选"}
-                                    </button>
-                                </div>
-                                <div className="flex flex-wrap gap-x-3 gap-y-2">
-                                    <label className="flex items-center gap-1.5 ts-12 cursor-pointer select-none">
-                                        <input type="checkbox" checked={allChecked} onChange={toggleAll} />
-                                        <span>全部</span>
-                                    </label>
-                                    {allSources.map(src => (
-                                        <label key={src} className="flex items-center gap-1.5 ts-12 cursor-pointer select-none">
-                                            <input type="checkbox" checked={!hiddenSources.has(src)} onChange={() => toggleSource(src)} />
-                                            <span className="max-w-[140px] truncate">{src}</span>
-                                        </label>
-                                    ))}
+                        {/* 来源过滤：右上角三点打开的底部弹窗，样式同记忆库的「记忆来源」 */}
+                        {sourcePickerOpen ? (
+                            <div className="modal-overlay modal-overlay-bottom" data-ui="modal" onClick={() => setSourcePickerOpen(false)}>
+                                <div className="modal-sheet memory-source-sheet" data-ui="modal-sheet" onClick={event => event.stopPropagation()}>
+                                    <div className="modal-header" data-ui="modal-header">
+                                        <button
+                                            type="button"
+                                            className="ui-bare-btn ts-12 font-semibold text-[var(--c-icon-active)]"
+                                            onClick={toggleAll}
+                                        >
+                                            {allChecked ? "全不选" : "全选"}
+                                        </button>
+                                        <h3 className="modal-title">来源过滤</h3>
+                                        <button className="modal-header-btn modal-header-btn-muted" onClick={() => setSourcePickerOpen(false)}><X size={18} /></button>
+                                    </div>
+                                    <div className="modal-body modal-body-tight" data-ui="modal-body">
+                                        <div className="memory-source-chips" style={{ "--chip-accent": "var(--c-icon-active)" } as CSSProperties}>
+                                            {allSources.map(src => {
+                                                const isChecked = !hiddenSources.has(src);
+                                                return (
+                                                    <button
+                                                        key={src}
+                                                        type="button"
+                                                        className="memory-source-chip"
+                                                        data-off={isChecked ? undefined : ""}
+                                                        aria-pressed={isChecked}
+                                                        title={src}
+                                                        onClick={() => toggleSource(src)}
+                                                    >
+                                                        {src}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        ) : null}
 
                         {visibleLogs.length === 0 ? (
                             <div className="ui-empty">
@@ -740,14 +769,6 @@ function ApiLogViewer({ onBack }: { onBack: () => void }) {
                                                 </div>
                                             </div>
                                             <div className="menu-right">
-                                                <span
-                                                    className="api-log-raw-tag"
-                                                    role="button"
-                                                    tabIndex={0}
-                                                    onClick={(e) => { e.stopPropagation(); setExpandedId(isOpen ? null : log.id); }}
-                                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpandedId(isOpen ? null : log.id); } }}
-                                                    title="查看这条调用的思维链原文"
-                                                >查看原始</span>
                                                 <ChevronRight
                                                     size={16}
                                                     className="ui-chevron-flip"
