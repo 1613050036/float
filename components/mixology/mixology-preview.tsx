@@ -301,7 +301,6 @@ function MixMechanismStage({ target }: { target: Extract<MixPreviewTarget, { kin
         toast: pushToast,
         mark: (_id, id, st) => setMarks((prev) => { const key = `${MECH_MATERIAL}|${id}`; const next = { ...prev }; if (st) next[key] = st; else delete next[key]; return next; }),
         call: async () => { throw new Error("试摆里不调连接器，进对局再试。"); },
-        draft: async () => { throw new Error("试摆里不调模型续写，进对局再试。"); },
         play: () => pushToast("试摆里不播放音频，进对局再试。"),
         stop: () => undefined,
         charName: () => MECH_CHAR,

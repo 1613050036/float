@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ChevronLeft, Copy, History, MoreHorizontal, Pencil, Plus, RotateCcw, Send, Sun, WandSparkles, X } from "lucide-react";
-import { MIX_REPAIR_EVENT, MIX_STORE_SNAPSHOT_TURNS, canReplayMixFrom, continueMix, draftMixUserReplies, editMixTurn, generateMixReply, mixTurnRawText, recordMixPanelStore, refreshMixOpening, regenerateMixTail, rerollMixReply, runMixEditSync, runMixSessionEnd, truncateMixAfterTurn, type MixRepairEventDetail } from "@/lib/mixology/engine";
+import { continueMix, editMixTurn, generateMixReply, canReplayMixFrom, MIX_REPAIR_EVENT, MIX_STORE_SNAPSHOT_TURNS, mixTurnRawText, recordMixPanelStore, refreshMixOpening, regenerateMixTail, rerollMixReply, runMixEditSync, runMixSessionEnd, truncateMixAfterTurn, type MixRepairEventDetail } from "@/lib/mixology/engine";
 import { findMixConnector, getMixMaterial, getMixSession, isMixBuiltinId, listMixPickables, MIX_CABINET_UPDATED_EVENT, resolveMixRecipeMaterials, saveMixMaterial, saveMixSession } from "@/lib/mixology/storage";
 import { applyMixMacros, MIX_DEFAULT_USER_NAME } from "@/lib/mixology/assembler";
 import { buildMixConditionContext, pickActiveMixMaterials } from "@/lib/mixology/state";
@@ -600,11 +600,6 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
      * 信任模式机括的宿主能力：与沙盒面板同一套语义（存储、记住的值、发言、连接器、播放、
      * 对白按钮状态、提示），只是直接以函数递给页面里跑的代码。
      */
-    /** mix.draft：从玩家视角续写几版下一条消息，用这一局完整上下文调一次模型 */
-    const handleDraft = useCallback(
-        (opts: { count?: number; hint?: string; styles?: string[]; length?: "short" | "medium" | "long" }) => draftMixUserReplies(sessionId, opts),
-        [sessionId],
-    );
     const trustedHost = useMemo<MixTrustedHost>(() => ({
         getState: () => getMixSession(sessionId)?.state ?? {},
         getStore: (materialId) => getMixSession(sessionId)?.mechanismStore?.[materialId] ?? {},
@@ -612,7 +607,6 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
         setState: (patch) => handlePanelState(patch),
         say: (text) => { const t = text.trim().slice(0, 2000); if (t) handlePanelSay(t); },
         toast: (text) => { const t = text.trim().slice(0, 120); if (t) onToast(t); },
-        draft: handleDraft,
         mark: (materialId, id, state) => handlePanelMark(materialId, id, state),
         call: async (materialId, name, params) => {
             const material = getMixMaterial(materialId);
@@ -640,7 +634,7 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
         stop: () => stopMixAudio(),
         charName: () => getMixSession(sessionId)?.charName ?? "",
         userName: () => getMixSession(sessionId)?.userName || MIX_DEFAULT_USER_NAME,
-    }), [sessionId, handlePanelStore, handlePanelState, handlePanelSay, handlePanelMark, onToast, handleDraft]);
+    }), [sessionId, handlePanelStore, handlePanelState, handlePanelSay, handlePanelMark, onToast]);
 
     // 进对局建实例（材料改过会重建），离开时收掉
     useEffect(() => {
@@ -1056,7 +1050,6 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             connectors={material.connectors}
                             onMark={handlePanelMark}
                             onToast={onToast}
-                            onDraft={handleDraft}
                         />
                     ))}
                 </div>
@@ -1091,7 +1084,6 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             connectors={material.connectors}
                             onMark={handlePanelMark}
                             onToast={onToast}
-                            onDraft={handleDraft}
                         />
                     </div>
                 ))}
@@ -1163,7 +1155,6 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             connectors={material.connectors}
                             onMark={handlePanelMark}
                             onToast={onToast}
-                            onDraft={handleDraft}
                         />
                     </div>
                 ))}
@@ -1190,7 +1181,6 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             connectors={material.connectors}
                             onMark={handlePanelMark}
                             onToast={onToast}
-                            onDraft={handleDraft}
                         />
                     ))}
                 </div>
@@ -1219,7 +1209,6 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             connectors={material.connectors}
                             onMark={handlePanelMark}
                             onToast={onToast}
-                            onDraft={handleDraft}
                             onBox={handlePanelBox}
                         />
                     ))}
@@ -1242,7 +1231,6 @@ export function MixologyGame({ sessionId, onBack, onToast }: GameProps) {
                             connectors={material.connectors}
                             onMark={handlePanelMark}
                             onToast={onToast}
-                            onDraft={handleDraft}
                         />
                     ))}
                 </div>
