@@ -136,9 +136,13 @@ export function MatCard({
     // 小票/尾调的静态封面就是渲染缩样（收起状态原样拍的那张）：卡片高度随图走、
     // 不裁不放大，和酒柜实时缩样长一个样。角色卡等配图封面仍走固定比例海报裁满。
     const flowCover = Boolean(shownCover) && (kind === "ticket" || kind === "encore");
+    const liveCover = !shownCover && Boolean(preview);
+    // 缩样卡（实时缩样 / 渲染缩略图）的封面本身就是要看的内容，作者标签不压在上面，
+    // 挪到下面文字区的名字上方；配图海报仍压在图的左上角
+    const authorInline = author && (flowCover || liveCover);
     if (mixKindHasCover(kind)) {
         return (
-            <div className="mix-mat-card" data-kind={kind} data-poster="true" data-live={!shownCover && preview ? "true" : undefined} data-flow={flowCover ? "true" : undefined} onClick={onClick}>
+            <div className="mix-mat-card" data-kind={kind} data-poster="true" data-live={liveCover ? "true" : undefined} data-flow={flowCover ? "true" : undefined} onClick={onClick}>
                 {shownCover ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img className="mix-mat-cover" src={shownCover} alt={name} onError={() => setCoverBroken(true)} />
@@ -148,9 +152,10 @@ export function MatCard({
                 ) : (
                     <div className="mix-poster-blank"><KindGlyph kind={kind} size={42} /></div>
                 )}
-                {author ? <div className="mix-poster-author">@{author}</div> : null}
+                {author && !authorInline ? <div className="mix-poster-author">@{author}</div> : null}
                 {badge ? <div className="mix-poster-badge">{badge}</div> : null}
                 <div className="mix-poster-veil">
+                    {authorInline ? <div className="mix-poster-author" data-inline="true">@{author}</div> : null}
                     <div className="mix-poster-name">{name}</div>
                     {hook ? <div className="mix-poster-hook">{hook}</div> : null}
                     <TagLine tags={tags} className="mix-poster-tags" />

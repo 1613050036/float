@@ -2432,7 +2432,20 @@
     position: static;
     height: auto;
     aspect-ratio: auto;
-    object-fit: unset;
+    /* 与酒柜实时缩样同一个下限（HalfScale 的 60px）：折叠条这类矮渲染贴顶摆，
+       底下留出空档，不会只剩一条紧贴文字；contain 保证图不被拉伸 */
+    min-height: 60px;
+    object-fit: contain;
+    object-position: top;
+}
+
+/* 缩样卡上的作者标签：不压封面，落在文字区名字上方 */
+.mix-poster-author[data-inline="true"] {
+    position: static;
+    display: inline-block;
+    margin-bottom: 6px;
+    backdrop-filter: none;
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .mix-poster-blank {
