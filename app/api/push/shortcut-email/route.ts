@@ -12,7 +12,7 @@ import { formatSupabaseRestError, getSupabaseServerConfig } from "@/lib/server/s
 // 未配置站点 Supabase 与未登录是两回事：单机模式下账号永远是 local_user，
 // 若把配置缺失也报成「请先登录」，自部署用户会以为要开账号系统。
 const notConfigured = () =>
-  NextResponse.json({ ok: false, error: "站点尚未配置 Supabase，邮件自动通道未开通。" }, { status: 503 });
+  NextResponse.json({ ok: false, error: "站点尚未配置 Supabase（部署环境缺 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY，不是应用内的个人云），邮件自动通道未开通。请站点主人按 README「邮件自动运行」配置并执行一体脚本。" }, { status: 503 });
 
 export async function GET(request: Request) {
   try {

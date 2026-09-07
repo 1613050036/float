@@ -94,8 +94,9 @@ NEXT_PUBLIC_SELF_HOSTED_MODE=true
 - `docs/game-hall-supabase.sql`：游戏大厅
 - `docs/custom-app-market-supabase.sql`：应用市场
 - `docs/black-market-supabase.sql`：黑市
-- `docs/online-play-supabase.sql`：多人联机（自定义APP/游戏的实时房间与云端共享，可选；不在一体脚本内，需单独执行）
-- `docs/moderation-supabase.sql`：内容管理（举报/管理员/下架/封号，可选；执行后用 SQL 把自己的账号 role 设为 admin，即可在 设置 → 管理中心 处理举报）
+- `docs/online-play-supabase.sql`：多人联机（自定义APP/游戏的实时房间与云端共享；已并入一体脚本，另需站点环境变量 `SUPABASE_ANON_KEY`）
+- `docs/moderation-supabase.sql`：内容管理（举报/管理员/下架/封号；已并入一体脚本，执行后用 SQL 把自己的账号 role 设为 admin，即可在 设置 → 管理中心 处理举报）
+- `docs/push-supabase.sql`：现实桥「邮件自动」所需的表已并入一体脚本；这个文件本身是旧的站点共享推送，新部署不要单独执行
 
 然后关闭单机模式并填入服务端密钥：
 
@@ -205,8 +206,10 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
 然后在这个站点 Supabase 项目的 SQL Editor 执行
-[`docs/push-supabase.sql`](./docs/push-supabase.sql)，再重新部署站点。若已为账号或其他
-站点功能配置过这两个变量，可以继续使用同一个站点项目。不要把 `service_role` 密钥
+[`docs/supabase-all-in-one.sql`](./docs/supabase-all-in-one.sql)（邮件自动所需的表已在其中；
+跑过一体脚本的直接重跑一遍即可，幂等），再重新部署站点。若已为账号或其他
+站点功能配置过这两个变量，可以继续使用同一个站点项目。注意这里说的是部署环境的
+服务端变量，不是应用内「云服务部署」一键创建的个人云——两者是不同的 Supabase 项目。不要把 `service_role` 密钥
 交给浏览器或写进任何 `NEXT_PUBLIC_*` 变量。
 
 #### 3. 配置 iPhone
